@@ -53,6 +53,16 @@ while True:
     prev, current = current, next_v
 
 ordered_vertices = np.array(ordered_vertices)
+# ---- adjust THESE ----
+n_origin_shift = -103  # optional shift of start point
+n_root  = 105
+n_lead  = 500
+n_tip   = 72
+
+
+# cyclic shift (edge-based)
+shift = n_origin_shift % len(ordered_vertices)
+ordered_vertices = np.roll(ordered_vertices, -shift)
 
 # Build ordered edges
 ordered_edges = [
@@ -64,10 +74,7 @@ print("Ordered boundary vertices:", len(ordered_vertices))
 
 N = len(ordered_edges)
 
-# ---- adjust THESE ----
-n_root  = 502
-n_lead  = 72
-n_tip   = 500
+
 # trailing auto-fills
 
 n_trail = N - (n_root + n_lead + n_tip)
