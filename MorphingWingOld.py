@@ -1,116 +1,108 @@
-import numpy as np 
+import numpy as np
 import pyvista as pv
-from pyvista import examples
 from collections import Counter
 
-edges = []
-mesh = pv.read('/Users/marko/Documents/GitHub/marko/Models/LatticeTestBenchComplicatedGeo.obj')
+obj_path = "/Users/marko/Documents/GitHub/marko/Models/LatticeTestbenchPYplotTaper.obj"
+
+mesh = pv.read(obj_path)
 mesh = mesh.triangulate()
+visMesh = mesh
+mesh = mesh.clean(tolerance=1e-6)
+
 points = mesh.points
+faces = mesh.faces.reshape(-1, 4)[:, 1:]  # (N,3)
 
-#Bounding box
-print(points.shape)
-print("Z min:", points[:,2].min())
-print("Z max:", points[:,2].max())
-print("Y min:", points[:,1].min())
-print("Y max:", points[:,1].max())
-print("x min:", points[:,0].min())
-print("x max:", points[:,0].max())
+edges = []
 
-Span = input("Enter Span axis: ")
-Cord = input("Enter Cord axis: ")
+for a, b, c in faces:
+    edges.append(tuple(sorted((a, b))))
+    edges.append(tuple(sorted((b, c))))
+    edges.append(tuple(sorted((c, a))))
 
-print("You entered:", Span, Cord)
+edge_counts = Counter(edges)
+boundary_edges = [e for e, count in edge_counts.items() if count == 1]
 
-input("Press Enter to continue...")
+boundary_edges = np.array(boundary_edges)
+boundary_vertices = np.unique(boundary_edges.flatten())
 
-#Source vertices
-def extract_face_vertices(obj_file_path):
-    faces = []
+print("Boundary edges:", len(boundary_edges))
+print("Boundary vertices:", len(boundary_vertices))
 
-    with open(obj_file_path, 'r') as file:
-        for line in file:
-            line = line.strip()
-            if line.startswith('f '):  # Only process face lines
-                parts = line.split()[1:]  # Skip the 'f'
-                face_vertices = []
-                for part in parts:
-                    # Each part can be v/vt/vn or v//vn or v
-                    vertex_index = part.split('/')[0]  # Take only the vertex index
-                    face_vertices.append(int(vertex_index)-1)
-                faces.append(face_vertices)
-    return faces
+# Build adjacency list
+adj = {}
+for a, b in boundary_edges:
+    adj.setdefault(a, []).append(b)
+    adj.setdefault(b, []).append(a)
 
-# Example usage
-if __name__ == "__main__":
-    obj_file_path = "/Users/marko/Documents/GitHub/marko/Models/LatticeTestBenchComplicatedGeo.obj" 
-    face_array = extract_face_vertices(obj_file_path)
-    print(face_array)
+# Choose start vertex (root reference)
+# Here: minimum X — change axis if desired
+start = min(boundary_vertices, key=lambda i: points[i, 0])
 
-print(len(face_array))
-input("Press Enter to continue...")
-def triangle_to_edge_pairs(triangle):
-    a, b, c = triangle
-    return [[a, b], [b, c], [a, c]]
+ordered_vertices = [start]
+prev = None
+current = start
 
-def faces_to_edges(faces):
-    edges = []
-    for face in faces:
-        edges.extend(triangle_to_edge_pairs(face))
-    return edges
+while True:
+    neighbors = adj[current]
+    next_v = neighbors[0] if neighbors[0] != prev else neighbors[1]
 
-# Example usage
-edges = faces_to_edges(face_array)
-edges = np.sort(edges, axis=1)
-for e in edges:
-    print(e)
-input("Press Enter to continue...")
+    if next_v == start:
+        break
 
-def remove_all_duplicate_edges(edges):
-    # Count occurrences
-    counts = Counter(tuple(edge) for edge in edges)
-    
-    # Keep only edges that occur exactly once
-    unique_edges = [list(edge) for edge, count in counts.items() if count == 1]
-    
-    return unique_edges
+    ordered_vertices.append(next_v)
+    prev, current = current, next_v
 
-# Example usage
-filtered_edges = remove_all_duplicate_edges(edges)
-filtered_edges = np.array(filtered_edges)
-filtered_edges = filtered_edges.reshape(-1)
-filtered_edges = np.unique(filtered_edges)
+ordered_vertices = np.array(ordered_vertices)
 
-for e in filtered_edges:
-    print(e)
-print("Total edges:", len(edges))
-print("Unique boundary edges:", len(filtered_edges))
+# Build ordered edges
+ordered_edges = [
+    (ordered_vertices[i], ordered_vertices[(i + 1) % len(ordered_vertices)])
+    for i in range(len(ordered_vertices))
+]
 
-input("press Enter to continue...") 
+print("Ordered boundary vertices:", len(ordered_vertices))
 
-vertex_coords = mesh.points[filtered_edges]  # Example vertex indices
-point = pv.PolyData(vertex_coords)
+N = len(ordered_edges)
 
+# ---- adjust THESE ----
+n_root  = 502
+n_lead  = 72
+n_tip   = 500
+# trailing auto-fills
 
-edges = mesh.extract_feature_edges(boundary_edges=True, non_manifold_edges=False, feature_edges=False, manifold_edges=False)
+n_trail = N - (n_root + n_lead + n_tip)
+if n_trail <= 0:
+    raise ValueError("Segment sizes exceed boundary length")
 
-# Plot mesh with highlighted boundary edges
-p = pv.Plotter(shape=(1,2))
-p.subplot(0, 0)
-p.show_axes()
-p.show_bounds(grid='back', location='all', show_xlabels=True, show_ylabels=True, show_zlabels=True)
-p.add_mesh(mesh, color='red', show_edges=False)
-p.add_mesh(edges, color='blue', line_width=1)
-p.add_mesh(point, color='red', point_size=15, render_points_as_spheres=True)  # highlight vertex
+# Slice ordered edges
+root_edges  = ordered_edges[0 : n_root]
+lead_edges  = ordered_edges[n_root : n_root + n_lead]
+tip_edges   = ordered_edges[n_root + n_lead : n_root + n_lead + n_tip]
+trail_edges = ordered_edges[n_root + n_lead + n_tip :]
 
-#p.add_points(LE_points, color="yellow", point_size=10, render_points_as_spheres=True)
-# p.add_points(TE_points, color="green", point_size=10, render_points_as_spheres=True)
-# p.add_points(RT_points, color="purple", point_size=10, render_points_as_spheres=True)
-# p.add_points(TP_points, color="orange", point_size=10, render_points_as_spheres=True)
-# UV map
-p.subplot(0, 1)
-p.add_text('UV Map', font_size=20, font='times')
+# Convert to vertex sets
+root_verts  = np.unique(np.array(root_edges).flatten())
+lead_verts  = np.unique(np.array(lead_edges).flatten())
+tip_verts   = np.unique(np.array(tip_edges).flatten())
+trail_verts = np.unique(np.array(trail_edges).flatten())
 
+root_pts  = points[root_verts]
+lead_pts  = points[lead_verts]
+tip_pts   = points[tip_verts]
+trail_pts = points[trail_verts]
 
-p.show()
+visEdges = visMesh.extract_feature_edges(boundary_edges=True, non_manifold_edges=False, feature_edges=False, manifold_edges=False)
 
+#visualize
+plotter = pv.Plotter()
+plotter.add_mesh(mesh, color="red", opacity=0.8)
+plotter.add_mesh(visEdges, color="blue", line_width=1)
+
+plotter.add_points(root_pts,  color="purple", point_size=12, render_points_as_spheres=True)
+plotter.add_points(lead_pts,  color="yellow", point_size=12, render_points_as_spheres=True)
+plotter.add_points(tip_pts,   color="orange", point_size=12, render_points_as_spheres=True)
+plotter.add_points(trail_pts, color="cyan",   point_size=12, render_points_as_spheres=True)
+
+plotter.show_axes()
+plotter.show_bounds(grid="back", location="all")
+plotter.show()
