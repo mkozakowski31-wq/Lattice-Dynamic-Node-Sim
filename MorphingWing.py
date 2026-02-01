@@ -54,9 +54,9 @@ while True:
 
 ordered_vertices = np.array(ordered_vertices)
 # ---- adjust THESE ----
-n_origin_shift = -103  # optional shift of start point
-n_root  = 105
-n_lead  = 500
+n_origin_shift = -102  # optional shift of start point
+n_root  = 103
+n_lead  = 501
 n_tip   = 72
 
 
@@ -105,10 +105,10 @@ plotter = pv.Plotter()
 plotter.add_mesh(mesh, color="red", opacity=0.8)
 plotter.add_mesh(visEdges, color="blue", line_width=1)
 
-plotter.add_points(root_pts,  color="purple", point_size=12, render_points_as_spheres=True)
-plotter.add_points(lead_pts,  color="yellow", point_size=12, render_points_as_spheres=True)
-plotter.add_points(tip_pts,   color="orange", point_size=12, render_points_as_spheres=True)
-plotter.add_points(trail_pts, color="cyan",   point_size=12, render_points_as_spheres=True)
+plotter.add_points(root_pts,  color="purple", point_size=12, render_points_as_spheres=True, opacity=0.5)
+plotter.add_points(lead_pts,  color="yellow", point_size=12, render_points_as_spheres=True, opacity=0.5)
+plotter.add_points(tip_pts,   color="orange", point_size=12, render_points_as_spheres=True, opacity=0.5)
+plotter.add_points(trail_pts, color="cyan",   point_size=12, render_points_as_spheres=True, opacity=0.5)
 
 plotter.show_axes()
 plotter.show_bounds(grid="back", location="all")
