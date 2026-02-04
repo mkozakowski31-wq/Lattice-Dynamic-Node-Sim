@@ -2,7 +2,7 @@ import numpy as np
 import pyvista as pv
 from collections import Counter
 
-obj_path = "/Users/marko/Documents/GitHub/marko/Models/LatticeTestbenchPYplotTaper.obj"
+obj_path = "Models/LatticeTestbenchPYplotTaper.obj"
 
 def EdgeLength(edges, points):
     edges = np.asarray(edges)
