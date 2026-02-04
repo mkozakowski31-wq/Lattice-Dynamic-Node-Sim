@@ -1,108 +1,135 @@
 import numpy as np
 import pyvista as pv
 from collections import Counter
+from scipy.spatial import cKDTree
 
+# -------------------------------------------------
+# LOAD + CLEAN MESH
+# -------------------------------------------------
 obj_path = "/Users/marko/Documents/GitHub/marko/Models/LatticeTestbenchPYplotTaper.obj"
 
 mesh = pv.read(obj_path)
 mesh = mesh.triangulate()
-visMesh = mesh
 mesh = mesh.clean(tolerance=1e-6)
 
 points = mesh.points
-faces = mesh.faces.reshape(-1, 4)[:, 1:]  # (N,3)
+faces = mesh.faces.reshape(-1, 4)[:, 1:]
 
+# -------------------------------------------------
+# FIND BOUNDARY EDGES
+# -------------------------------------------------
 edges = []
-
 for a, b, c in faces:
     edges.append(tuple(sorted((a, b))))
     edges.append(tuple(sorted((b, c))))
     edges.append(tuple(sorted((c, a))))
 
 edge_counts = Counter(edges)
-boundary_edges = [e for e, count in edge_counts.items() if count == 1]
-
-boundary_edges = np.array(boundary_edges)
+boundary_edges = np.array([e for e, c in edge_counts.items() if c == 1])
 boundary_vertices = np.unique(boundary_edges.flatten())
 
-print("Boundary edges:", len(boundary_edges))
 print("Boundary vertices:", len(boundary_vertices))
 
-# Build adjacency list
+# -------------------------------------------------
+# ORDER BOUNDARY LOOP
+# -------------------------------------------------
 adj = {}
 for a, b in boundary_edges:
     adj.setdefault(a, []).append(b)
     adj.setdefault(b, []).append(a)
 
-# Choose start vertex (root reference)
-# Here: minimum X — change axis if desired
 start = min(boundary_vertices, key=lambda i: points[i, 0])
 
-ordered_vertices = [start]
+ordered = [start]
 prev = None
-current = start
+cur = start
 
 while True:
-    neighbors = adj[current]
-    next_v = neighbors[0] if neighbors[0] != prev else neighbors[1]
-
-    if next_v == start:
+    nxt = adj[cur][0] if adj[cur][0] != prev else adj[cur][1]
+    if nxt == start:
         break
+    ordered.append(nxt)
+    prev, cur = cur, nxt
 
-    ordered_vertices.append(next_v)
-    prev, current = current, next_v
+ordered = np.array(ordered)
 
-ordered_vertices = np.array(ordered_vertices)
+# -------------------------------------------------
+# USER-CONTROLLED SEGMENT SIZES
+# -------------------------------------------------
+n_root = 103
+n_lead = 501
+n_tip  = 72
+n_trail = len(ordered) - (n_root + n_lead + n_tip)
 
-# Build ordered edges
-ordered_edges = [
-    (ordered_vertices[i], ordered_vertices[(i + 1) % len(ordered_vertices)])
-    for i in range(len(ordered_vertices))
-]
-
-print("Ordered boundary vertices:", len(ordered_vertices))
-
-N = len(ordered_edges)
-
-# ---- adjust THESE ----
-n_root  = 502
-n_lead  = 72
-n_tip   = 500
-# trailing auto-fills
-
-n_trail = N - (n_root + n_lead + n_tip)
 if n_trail <= 0:
-    raise ValueError("Segment sizes exceed boundary length")
+    raise ValueError("Segment sizes invalid")
 
-# Slice ordered edges
-root_edges  = ordered_edges[0 : n_root]
-lead_edges  = ordered_edges[n_root : n_root + n_lead]
-tip_edges   = ordered_edges[n_root + n_lead : n_root + n_lead + n_tip]
-trail_edges = ordered_edges[n_root + n_lead + n_tip :]
+root_idx  = ordered[:n_root]
+lead_idx  = ordered[n_root:n_root+n_lead]
+tip_idx   = ordered[n_root+n_lead:n_root+n_lead+n_tip]
+trail_idx = ordered[n_root+n_lead+n_tip:]
 
-# Convert to vertex sets
-root_verts  = np.unique(np.array(root_edges).flatten())
-lead_verts  = np.unique(np.array(lead_edges).flatten())
-tip_verts   = np.unique(np.array(tip_edges).flatten())
-trail_verts = np.unique(np.array(trail_edges).flatten())
+root_pts  = points[root_idx]
+trail_pts = points[trail_idx]
 
-root_pts  = points[root_verts]
-lead_pts  = points[lead_verts]
-tip_pts   = points[tip_verts]
-trail_pts = points[trail_verts]
+# -------------------------------------------------
+# STRUCTURAL CURVE FUNCTIONS
+# -------------------------------------------------
+def arc_param(P):
+    d = np.linalg.norm(P[1:] - P[:-1], axis=1)
+    s = np.concatenate([[0.0], np.cumsum(d)])
+    return s / s[-1]
 
-visEdges = visMesh.extract_feature_edges(boundary_edges=True, non_manifold_edges=False, feature_edges=False, manifold_edges=False)
+def interp_boundary(P, t):
+    s = arc_param(P)
+    i = np.searchsorted(s, t)
+    if i == 0:
+        return P[0]
+    if i >= len(P):
+        return P[-1]
+    w = (t - s[i-1]) / (s[i] - s[i-1])
+    return (1-w)*P[i-1] + w*P[i]
 
-#visualize
+def ruled_curve(A, B, n=150):
+    curve = []
+    for t in np.linspace(0, 1, n):
+        pa = interp_boundary(A, t)
+        pb = interp_boundary(B, t)
+        curve.append((1-t)*pa + t*pb)
+    return np.array(curve)
+
+def project_to_mesh(curve, V):
+    tree = cKDTree(V)
+    _, idx = tree.query(curve)
+    return V[idx]
+
+def smooth_curve(curve, iters=15, lam=0.4):
+    C = curve.copy()
+    for _ in range(iters):
+        C[1:-1] += lam * (C[:-2] + C[2:] - 2*C[1:-1])
+    return C
+
+# -------------------------------------------------
+# BUILD STRUCTURAL CONNECTION
+# -------------------------------------------------
+print("Connecting root_pts[0] to trail_pts[39]")
+
+curve = ruled_curve(root_pts, trail_pts, n=200)
+curve = project_to_mesh(curve, points)
+curve = smooth_curve(curve)
+
+# -------------------------------------------------
+# VISUALIZATION
+# -------------------------------------------------
 plotter = pv.Plotter()
-plotter.add_mesh(mesh, color="red", opacity=0.8)
-plotter.add_mesh(visEdges, color="blue", line_width=1)
+plotter.add_mesh(mesh, color="lightgray", opacity=0.85)
 
-plotter.add_points(root_pts,  color="purple", point_size=12, render_points_as_spheres=True)
-plotter.add_points(lead_pts,  color="yellow", point_size=12, render_points_as_spheres=True)
-plotter.add_points(tip_pts,   color="orange", point_size=12, render_points_as_spheres=True)
-plotter.add_points(trail_pts, color="cyan",   point_size=12, render_points_as_spheres=True)
+plotter.add_points(root_pts, color="purple", point_size=10)
+plotter.add_points(trail_pts, color="cyan", point_size=10)
+
+plotter.add_mesh(pv.PolyData(curve), color="yellow", line_width=4)
+plotter.add_points(curve, color="yellow", point_size=6)
 
 plotter.show_axes()
-plotter.show_bounds(grid="back", location="all")
+plotter.show_bounds()
 plotter.show()
