@@ -71,8 +71,6 @@ def resample_curve_equal(points, N):
     return out
 
 
-
-
 mesh = pv.read(obj_path)
 mesh = mesh.triangulate()
 visMesh = mesh
@@ -122,6 +120,7 @@ while True:
     prev, current = current, next_v
 
 ordered_vertices = np.array(ordered_vertices)
+
 # ---- adjust THESE ----
 n_origin_shift = -102  # optional shift of start point
 n_root  = 103
@@ -158,15 +157,10 @@ tip_edges   = ordered_edges[n_root + n_lead : n_root + n_lead + n_tip]
 trail_edges = ordered_edges[n_root + n_lead + n_tip :]
 
 # Convert to vertex sets
-root_verts  = np.unique(np.array(root_edges).flatten())
-lead_verts  = np.unique(np.array(lead_edges).flatten())
-tip_verts   = np.unique(np.array(tip_edges).flatten())
-trail_verts = np.unique(np.array(trail_edges).flatten())
-
-root_pts  = points[root_verts]
-lead_pts  = points[lead_verts]
-tip_pts   = points[tip_verts]
-trail_pts = points[trail_verts]
+root_pts  = points[np.unique(np.array(root_edges).flatten())]
+lead_pts  = points[np.unique(np.array(lead_edges).flatten())]
+tip_pts   = points[np.unique(np.array(tip_edges).flatten())]
+trail_pts = points[np.unique(np.array(trail_edges).flatten())]
 
 root_len  = EdgeLength(root_edges, points)
 tip_len   = EdgeLength(tip_edges, points)
@@ -187,6 +181,10 @@ tip_pts = resample_curve_equal(reorder_curve(tip_pts), VCcount)
 lead_pts = resample_curve_equal(reorder_curve(lead_pts), VWcount)
 trail_pts = resample_curve_equal(reorder_curve(trail_pts), VWcount)
 
+print(len(root_pts))
+print(len(tip_pts))
+print(len(lead_pts))
+print(len(trail_pts))
 # ---- Junction vertices (derived from segmentation) ----
 L_R = ordered_vertices[n_root]
 L_T = ordered_vertices[n_root + n_lead]
@@ -197,12 +195,34 @@ junction_vertices = np.array([L_R, L_T, T_T, T_R])
 junction_points = points[junction_vertices]
 
 
+
+lines = pv.Line()
+for x in range(0, (VCcount), 1):
+    line = pv.Line(trail_pts[VWcount-1-x], root_pts[VCcount-1-x])
+    lines= pv.merge([lines,line])
+for x in range(0, VWcount-VCcount, 1):
+    line = pv.Line(trail_pts[x], lead_pts[x+VCcount-1])
+    lines = pv.merge([lines,line])
+for x in range(0,VCcount,1):
+    line = pv.Line(tip_pts[x], lead_pts[x])
+    lines = pv.merge([lines,line])
+for y in range(VCcount, 0, -1):
+    line = pv.Line(lead_pts[VWcount-y], root_pts[y-1])
+    lines= pv.merge([lines,line])
+for y in range(0, VWcount-VCcount, 1):
+    line = pv.Line(trail_pts[y+VCcount-1], lead_pts[y])
+    lines = pv.merge([lines,line])
+for y in range(0,VCcount,1):
+    line = pv.Line(tip_pts[VCcount-y-1], trail_pts[y])
+    lines = pv.merge([lines,line])
+
 visEdges = visMesh.extract_feature_edges(boundary_edges=True, non_manifold_edges=False, feature_edges=False, manifold_edges=False)
 
 #visualize
 plotter = pv.Plotter()
 plotter.add_mesh(mesh, color="red", opacity=0.8)
 plotter.add_mesh(visEdges, color="blue", line_width=1)
+plotter.add_mesh(lines,line_width=4)
 plotter.show_axes()
 plotter.show_bounds(grid="back", location="all")
 
