@@ -1,5 +1,7 @@
 import numpy as np
 import pyvista as pv
+import vtk 
+from tqdm import tqdm
 from collections import Counter
 
 obj_path = "Models/LatticeTestbenchPYplotTaper.obj"
@@ -70,6 +72,100 @@ def resample_curve_equal(points, N):
 
     return out
 
+def pn_triangle_point(P, N, bary):
+    """
+    P: (3,3) triangle vertices
+    N: (3,3) vertex normals
+    bary: (u,v,w) barycentric coords
+    """
+    u, v, w = bary
+
+    # Corner points
+    b300 = P[0]
+    b030 = P[1]
+    b003 = P[2]
+
+    # Edge control points
+    b210 = (2*P[0] + P[1] - np.dot(P[1]-P[0], N[0]) * N[0]) / 3
+    b120 = (2*P[1] + P[0] - np.dot(P[0]-P[1], N[1]) * N[1]) / 3
+
+    b021 = (2*P[1] + P[2] - np.dot(P[2]-P[1], N[1]) * N[1]) / 3
+    b012 = (2*P[2] + P[1] - np.dot(P[1]-P[2], N[2]) * N[2]) / 3
+
+    b102 = (2*P[2] + P[0] - np.dot(P[0]-P[2], N[2]) * N[2]) / 3
+    b201 = (2*P[0] + P[2] - np.dot(P[2]-P[0], N[0]) * N[0]) / 3
+
+    # Center point
+    E = (b210 + b120 + b021 + b012 + b102 + b201) / 6
+    V = (P[0] + P[1] + P[2]) / 3
+    b111 = E + (E - V) / 2
+
+    # Bernstein basis
+    return (
+        b300*u**3 + b030*v**3 + b003*w**3 +
+        3*(b210*u**2*v + b120*u*v**2 +
+           b021*v**2*w + b012*v*w**2 +
+           b102*w**2*u + b201*w*u**2) +
+        6*b111*u*v*w
+    )
+
+def smooth_geodesic(mesh, start, end, n_points=50, iters=50):
+
+    path = np.linspace(start, end, n_points)
+
+    locator = vtk.vtkStaticCellLocator()
+    locator.SetDataSet(mesh)
+    locator.BuildLocator()
+
+    for _ in range(iters):
+        for i in range(1, n_points - 1):
+            p = path[i]
+
+            # --- VTK closest-point query ---
+            closest_point = [0.0, 0.0, 0.0]
+            cell_id = vtk.mutable(0)
+            sub_id = vtk.mutable(0)
+            dist2 = vtk.mutable(0.0)
+
+            locator.FindClosestPoint(
+                p,
+                closest_point,
+                cell_id,
+                sub_id,
+                dist2
+            )
+
+            cid = int(cell_id)
+            cell = mesh.get_cell(cid)
+            vids = cell.point_ids
+
+            P = mesh.points[vids]
+            N = mesh.point_normals[vids]
+
+            # Barycentric coordinates
+            v0, v1, v2 = P
+            v = np.array(closest_point) - v0
+            a = v1 - v0
+            b = v2 - v0
+
+            d00 = np.dot(a, a)
+            d01 = np.dot(a, b)
+            d11 = np.dot(b, b)
+            d20 = np.dot(v, a)
+            d21 = np.dot(v, b)
+
+            denom = d00 * d11 - d01 * d01
+            v_coord = (d11 * d20 - d01 * d21) / denom
+            w_coord = (d00 * d21 - d01 * d20) / denom
+            u_coord = 1.0 - v_coord - w_coord
+
+            bary = np.clip([u_coord, v_coord, w_coord], 0.0, 1.0)
+            bary /= bary.sum()
+
+            path[i] = pn_triangle_point(P, N, bary)
+
+    return path
+
 
 mesh = pv.read(obj_path)
 mesh = mesh.triangulate()
@@ -121,7 +217,7 @@ while True:
 
 ordered_vertices = np.array(ordered_vertices)
 
-# ---- adjust THESE ----
+#--------------- PARAMETER VARIABLES ----------------------
 n_origin_shift = -102  # optional shift of start point
 n_root  = 103
 n_lead  = 501
@@ -195,26 +291,53 @@ junction_vertices = np.array([L_R, L_T, T_T, T_R])
 junction_points = points[junction_vertices]
 
 
+#Algorithm to plot corrisponding diagonal vertices
+geo_lines = []
 
-lines = pv.Line()
-for x in range(0, (VCcount), 1):
-    line = pv.Line(trail_pts[VWcount-1-x], root_pts[VCcount-1-x])
-    lines= pv.merge([lines,line])
-for x in range(0, VWcount-VCcount, 1):
-    line = pv.Line(trail_pts[x], lead_pts[x+VCcount-1])
-    lines = pv.merge([lines,line])
-for x in range(0,VCcount,1):
-    line = pv.Line(tip_pts[x], lead_pts[x])
-    lines = pv.merge([lines,line])
-for y in range(VCcount, 0, -1):
-    line = pv.Line(lead_pts[VWcount-y], root_pts[y-1])
-    lines= pv.merge([lines,line])
-for y in range(0, VWcount-VCcount, 1):
-    line = pv.Line(trail_pts[y+VCcount-1], lead_pts[y])
-    lines = pv.merge([lines,line])
-for y in range(0,VCcount,1):
-    line = pv.Line(tip_pts[VCcount-y-1], trail_pts[y])
-    lines = pv.merge([lines,line])
+mesh.compute_normals(inplace=True)
+for x in tqdm(range(VCcount), desc='Processing RootTrailX'):
+    geo_curve = smooth_geodesic(
+        mesh, trail_pts[VWcount - 1 - x], root_pts[VCcount - 1 - x], n_points=60, iters=80)
+    geo_lines.append(pv.lines_from_points(geo_curve))
+    geo_line = pv.merge(geo_lines)
+for x in tqdm(range(0, VWcount-VCcount, 1), desc='Processing LeadTrailX'):
+    geo_curve = smooth_geodesic(
+        mesh, trail_pts[x], lead_pts[x+VCcount-1], n_points=60, iters=80)
+    geo_lines.append(pv.lines_from_points(geo_curve))
+    geo_line = pv.merge(geo_lines)
+for x in tqdm(range(VCcount),desc='Processing TipLeadX'):
+    geo_curve = smooth_geodesic(
+        mesh, tip_pts[x], lead_pts[x], n_points=60, iters=80)
+    geo_lines.append(pv.lines_from_points(geo_curve))
+    geo_line = pv.merge(geo_lines)
+for y in tqdm(range(VCcount, 0,-1), desc='Processing RootLeadY'):
+    geo_curve = smooth_geodesic(
+        mesh, lead_pts[VWcount-y], root_pts[y-1], n_points=60, iters=80)
+    geo_lines.append(pv.lines_from_points(geo_curve))
+    geo_line = pv.merge(geo_lines)
+for y in tqdm(range(VWcount-VCcount), desc='Processing LeadTrailY'):
+    geo_curve = smooth_geodesic(
+        mesh, trail_pts[y+VCcount-1], lead_pts[y], n_points=60, iters=80)
+    geo_lines.append(pv.lines_from_points(geo_curve))
+    geo_line = pv.merge(geo_lines)
+for y in tqdm(range(VCcount),desc='Processing TipTrailY'):
+    geo_curve = smooth_geodesic(
+        mesh, tip_pts[VCcount-y-1], trail_pts[y], n_points=60, iters=80)
+    geo_lines.append(pv.lines_from_points(geo_curve))
+    geo_line = pv.merge(geo_lines)
+
+# for y in range(VCcount, 0, -1):
+#     line = pv.Line(lead_pts[VWcount-y], root_pts[y-1])
+#     lines= pv.merge([lines,line])
+# for y in range(0, VWcount-VCcount, 1):
+#     line = pv.Line(trail_pts[y+VCcount-1], lead_pts[y])
+#     lines = pv.merge([lines,line])
+# for y in range(0,VCcount,1):
+#     line = pv.Line(tip_pts[VCcount-y-1], trail_pts[y])
+#     lines = pv.merge([lines,line])
+
+
+# --- GEODESIC RULER ---x
 
 visEdges = visMesh.extract_feature_edges(boundary_edges=True, non_manifold_edges=False, feature_edges=False, manifold_edges=False)
 
@@ -222,10 +345,10 @@ visEdges = visMesh.extract_feature_edges(boundary_edges=True, non_manifold_edges
 plotter = pv.Plotter()
 plotter.add_mesh(mesh, color="red", opacity=0.8)
 plotter.add_mesh(visEdges, color="blue", line_width=1)
-plotter.add_mesh(lines,line_width=4)
+plotter.add_mesh(geo_line,line_width=4)
 plotter.show_axes()
 plotter.show_bounds(grid="back", location="all")
-
+plotter.add_mesh(geo_line, color="black", line_width=6)
 
 #segments
 plotter.add_points(root_pts,  color="red", point_size=12, render_points_as_spheres=True)
@@ -234,9 +357,9 @@ plotter.add_points(tip_pts,   color="green", point_size=12, render_points_as_sph
 plotter.add_points(trail_pts, color="orange",   point_size=12, render_points_as_spheres=True)
 
 #corners
-# plotter.add_points(junction_points[0], color="pink", point_size=20, render_points_as_spheres=True) # LEAD-ROOT
-# plotter.add_points(junction_points[1], color="teal", point_size=20, render_points_as_spheres=True) # TIP-LEAD
-# plotter.add_points(junction_points[2], color="black", point_size=20, render_points_as_spheres=True) # TIP-TRAIL
-# plotter.add_points(junction_points[3], color="white", point_size=20, render_points_as_spheres=True) # ROOT-TRAIL
+plotter.add_points(junction_points[0], color="pink", point_size=20, render_points_as_spheres=True) # LEAD-ROOT
+plotter.add_points(junction_points[1], color="teal", point_size=20, render_points_as_spheres=True) # TIP-LEAD
+plotter.add_points(junction_points[2], color="black", point_size=20, render_points_as_spheres=True) # TIP-TRAIL
+plotter.add_points(junction_points[3], color="white", point_size=20, render_points_as_spheres=True) # ROOT-TRAIL
 
 plotter.show()
