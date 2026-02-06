@@ -6,6 +6,7 @@ from scipy.spatial import cKDTree
 from tqdm import tqdm
 from collections import Counter
 import time
+from joblib import Parallel, delayed
 
 
 obj_path = "Models/LatticeTestbenchPYplotTaper.obj"
@@ -20,6 +21,7 @@ points = mesh.points
 faces = mesh.faces.reshape(-1, 4)[:, 1:]  # (N,3)
 
 #--------------- PARAMETER VARIABLES ----------------------
+boundary_dir = 1
 n_origin_shift = -102  # optional shift of start point
 n_root  = 103
 n_lead  = 501
@@ -196,7 +198,7 @@ def curve_curve_closest_points(curveA, curveB):
     i = np.argmin(dists)
     return curveA[i], curveB[idx[i]]
 
-def EdgeSolver(n_origin_shift, n_root, n_lead, n_tip):
+def EdgeSolver(n_origin_shift, n_root, n_lead, n_tip, boundary_dir):
     edges = []
 
     for a, b, c in faces:
@@ -238,6 +240,9 @@ def EdgeSolver(n_origin_shift, n_root, n_lead, n_tip):
         prev, current = current, next_v
 
     ordered_vertices = np.array(ordered_vertices)
+
+    if boundary_dir == -1:
+        ordered_vertices = ordered_vertices[::-1]
 
     # cyclic shift (edge-based)
     shift = n_origin_shift % len(ordered_vertices)
@@ -286,7 +291,7 @@ def EdgeSolver(n_origin_shift, n_root, n_lead, n_tip):
     root_pts, lead_pts, tip_pts, trail_pts, junction_points)
 
 (ordered_vertices, root_edges, lead_edges, tip_edges, trail_edges,
-root_pts, lead_pts, tip_pts, trail_pts, junction_points) = EdgeSolver(n_origin_shift, n_root, n_lead, n_tip)
+root_pts, lead_pts, tip_pts, trail_pts, junction_points) = EdgeSolver(n_origin_shift, n_root, n_lead, n_tip , boundary_dir)
 
 visEdges = visMesh.extract_feature_edges(boundary_edges=True, non_manifold_edges=False, feature_edges=False, manifold_edges=False)
 
@@ -311,27 +316,34 @@ def updateGeo(visEd):
 updateGeo(visEd)
 while True:
     print("\nAdjust edge parameters:")
-    print(f"shift={n_origin_shift}, root={n_root}, lead={n_lead}, tip={n_tip}")
+    print(f"shift={n_origin_shift}, root={n_root}, lead={n_lead}, tip={n_tip}, boundary direction={boundary_dir}")
 
     cmd = input(
-        "Enter: shift root lead tip   OR   type 'continue'\n> "
+        "Enter: shift root lead tip boundry  OR   type 'continue' OR type 'help'\n> "
     ).strip()
 
     if cmd.lower() == "continue":
         break
-
-    try:
-        n_origin_shift, n_root, n_lead, n_tip = map(int, cmd.split())
-    except ValueError:
-        print("Invalid input. Example: -102 103 501 72 or continue")
-        continue
+    if cmd.lower() == "help":
+        print("")
+        print("Each index defines the number of vertices in each boundry edge")
+        print("Adjust boundry direction (Counter vs. Clockwise), by inputing 1 or -1 to boundry index")
+        print("Boundary Edges: Root chord = Red, Leading edge = Blue, Tip chord = Green, Trailing edge = Orange")
+        print("Corners: Root_Lead = Pink, Lead_Tip = Green, Tip_trail = Black, Trail_root = White")
+        input("Press enter to continue")
+    else:
+        try:
+            n_origin_shift, n_root, n_lead, n_tip, boundary_dir = map(int, cmd.split())
+        except ValueError:
+            print("Invalid input. Example: -102 103 501 72 1 or continue")
+            continue
 
     # ---- recompute edges ----
     (
         ordered_vertices,
         root_edges, lead_edges, tip_edges, trail_edges,
         root_pts, lead_pts, tip_pts, trail_pts, junction_points
-    ) = EdgeSolver(n_origin_shift, n_root, n_lead, n_tip)
+    ) = EdgeSolver(n_origin_shift, n_root, n_lead, n_tip, boundary_dir)
     updateGeo(visEd)
 
 visEd = False
@@ -362,42 +374,48 @@ geo_linesX = []
 start_time = time.perf_counter()
 
 mesh.compute_normals(inplace=True)
-for x in tqdm(range(VCcount), desc='Processing RootTrailX'):
-    geo_curve = smooth_geodesic(
-        mesh, trail_pts[VWcount - 1 - x], root_pts[VCcount - 1 - x], n_points=60, iters=80)
-    geo_linesX.append(pv.lines_from_points(geo_curve))
-    geo_lineX = pv.merge(geo_linesX)
-for x in tqdm(range(0, VWcount-VCcount, 1), desc='Processing LeadTrailX'):
-    geo_curve = smooth_geodesic(
-        mesh, trail_pts[x], lead_pts[x+VCcount-1], n_points=60, iters=80)
-    geo_linesX.append(pv.lines_from_points(geo_curve))
-    geo_lineX = pv.merge(geo_linesX)
-for x in tqdm(range(VCcount),desc='Processing TipLeadX'):
-    geo_curve = smooth_geodesic(
-        mesh, tip_pts[x], lead_pts[x], n_points=60, iters=80)
-    geo_linesX.append(pv.lines_from_points(geo_curve))
-    geo_lineX = pv.merge(geo_linesX)
-geo_linesY=[]
-for y in tqdm(range(VCcount, 0,-1), desc='Processing RootLeadY'):
-    geo_curve = smooth_geodesic(
-        mesh, lead_pts[VWcount-y], root_pts[y-1], n_points=60, iters=80)
-    geo_linesY.append(pv.lines_from_points(geo_curve))
-    geo_lineY = pv.merge(geo_linesY)
-for y in tqdm(range(VWcount-VCcount), desc='Processing LeadTrailY'):
-    geo_curve = smooth_geodesic(
-        mesh, trail_pts[y+VCcount-1], lead_pts[y], n_points=60, iters=80)
-    geo_linesY.append(pv.lines_from_points(geo_curve))
-    geo_lineY = pv.merge(geo_linesY)
-for y in tqdm(range(VCcount),desc='Processing TipTrailY'):
-    geo_curve = smooth_geodesic(
-        mesh, tip_pts[VCcount-y-1], trail_pts[y], n_points=60, iters=80)
-    geo_linesY.append(pv.lines_from_points(geo_curve))
-    geo_lineY = pv.merge(geo_linesY)
+def make_geo(start, end):
+    curve = smooth_geodesic(mesh, start, end, n_points=60, iters=80)
+    return pv.lines_from_points(curve)
+# ---- Root → Trail (X) ----
+geo_linesX_1 = Parallel(n_jobs=-1)(
+    delayed(make_geo)(trail_pts[VWcount - 1 - x], root_pts[VCcount - 1 - x])
+    for x in tqdm(range(VCcount), desc="Processing RootTrailX")
+)
+# ---- Lead → Trail (X) ----
+geo_linesX_2 = Parallel(n_jobs=-1)(
+    delayed(make_geo)(trail_pts[x], lead_pts[x + VCcount - 1]) for x in tqdm(range(0, VWcount - VCcount), desc="Processing LeadTrailX")
+)
+# ---- Tip → Lead (X) ----
+geo_linesX_3 = Parallel(n_jobs=-1)(
+    delayed(make_geo)(tip_pts[x],lead_pts[x])for x in tqdm(range(VCcount), desc="Processing TipLeadX")
+)
+# ---- Combine + merge ONCE ----
+geo_linesX = geo_linesX_1 + geo_linesX_2 + geo_linesX_3
+geo_lineX = pv.merge(geo_linesX)
 
+geo_linesY=[]
+# ---- Root → Lead (Y) ----
+geo_linesY_1 = Parallel(n_jobs=-1)(
+    delayed(make_geo)(lead_pts[VWcount - y],root_pts[y - 1]) for y in tqdm(range(VCcount, 0, -1), desc="Processing RootLeadY")
+)
+# ---- Lead → Trail (Y) ----
+geo_linesY_2 = Parallel(n_jobs=-1)(
+    delayed(make_geo)(trail_pts[y + VCcount - 1],lead_pts[y])
+    for y in tqdm(range(VWcount - VCcount), desc="Processing LeadTrailY")
+)
+# ---- Tip → Trail (Y) ----
+geo_linesY_3 = Parallel(n_jobs=-1)(
+    delayed(make_geo)(tip_pts[VCcount - y - 1],trail_pts[y])for y in tqdm(range(VCcount), desc="Processing TipTrailY")
+)
+# ---- Combine + merge ONCE ----
+geo_linesY = geo_linesY_1 + geo_linesY_2 + geo_linesY_3
+geo_lineY = pv.merge(geo_linesY)
 end_time = time.perf_counter()
 
 elapsed_time = end_time - start_time
 print(f"Execution took: {elapsed_time:.4f} seconds")
+
 
 lattice_nodes = []
 

@@ -6,7 +6,6 @@ Goals:
 - Run inverse kinematics
 - Create curves which follow relative node fixture pathway
 
-
 Potential problems for you:
 - libs may not be installed
 - The pathway to OBJ is on my computer so the program may not be able to access the OBJ on your computer
