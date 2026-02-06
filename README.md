@@ -1,7 +1,9 @@
 
 Goals:
-- Make OBJ access computer agnostic (ie. not requiring a pathway)
--plotting lattice to 3d curve
+- Connect lattice vertices with edges
+- Figure out how to interpolate to expanded position, and adjust boundries
+- Run inverse kinematics
+- Create curves which follow relative node fixture pathway
 
 Potential problems for you:
 - libs may not be installed
@@ -9,3 +11,5 @@ Potential problems for you:
 
 Completed:
 - Automatically split edges to front, back, left side and right side
+- Make OBJ access computer agnostic (ie. not requiring a pathway)
+
