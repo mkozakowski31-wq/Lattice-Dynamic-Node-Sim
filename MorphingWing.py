@@ -1,12 +1,31 @@
-import numpy as np
+import numpy as np 
 import pyvista as pv
-import vtk 
+import vtk
+from pyvistaqt import BackgroundPlotter
 from scipy.spatial import cKDTree
 from tqdm import tqdm
 from collections import Counter
 import time
 
+
 obj_path = "Models/LatticeTestbenchPYplotTaper.obj"
+plotter = pv.Plotter()
+p = BackgroundPlotter()
+mesh = pv.read(obj_path)
+mesh = mesh.triangulate()
+visMesh = mesh
+mesh = mesh.clean(tolerance=1e-6)
+visEd = True
+points = mesh.points
+faces = mesh.faces.reshape(-1, 4)[:, 1:]  # (N,3)
+
+#--------------- PARAMETER VARIABLES ----------------------
+n_origin_shift = -102  # optional shift of start point
+n_root  = 103
+n_lead  = 501
+n_tip   = 72
+#Lattice adjustment values
+size = 1
 
 def EdgeLength(edges, points):
     edges = np.asarray(edges)
@@ -176,97 +195,146 @@ def curve_curve_closest_points(curveA, curveB):
     dists, idx = tree.query(curveA)
     i = np.argmin(dists)
     return curveA[i], curveB[idx[i]]
-mesh = pv.read(obj_path)
-mesh = mesh.triangulate()
-visMesh = mesh
-mesh = mesh.clean(tolerance=1e-6)
 
-points = mesh.points
-faces = mesh.faces.reshape(-1, 4)[:, 1:]  # (N,3)
+def EdgeSolver(n_origin_shift, n_root, n_lead, n_tip):
+    edges = []
 
-edges = []
+    for a, b, c in faces:
+        edges.append(tuple(sorted((a, b))))
+        edges.append(tuple(sorted((b, c))))
+        edges.append(tuple(sorted((c, a))))
 
-for a, b, c in faces:
-    edges.append(tuple(sorted((a, b))))
-    edges.append(tuple(sorted((b, c))))
-    edges.append(tuple(sorted((c, a))))
+    edge_counts = Counter(edges)
+    boundary_edges = [e for e, count in edge_counts.items() if count == 1]
 
-edge_counts = Counter(edges)
-boundary_edges = [e for e, count in edge_counts.items() if count == 1]
+    boundary_edges = np.array(boundary_edges)
+    boundary_vertices = np.unique(boundary_edges.flatten())
 
-boundary_edges = np.array(boundary_edges)
-boundary_vertices = np.unique(boundary_edges.flatten())
+    print("Boundary edges:", len(boundary_edges))
+    print("Boundary vertices:", len(boundary_vertices))
 
-print("Boundary edges:", len(boundary_edges))
-print("Boundary vertices:", len(boundary_vertices))
+    # Build adjacency list
+    adj = {}
+    for a, b in boundary_edges:
+        adj.setdefault(a, []).append(b)
+        adj.setdefault(b, []).append(a)
 
-# Build adjacency list
-adj = {}
-for a, b in boundary_edges:
-    adj.setdefault(a, []).append(b)
-    adj.setdefault(b, []).append(a)
+    # Choose start vertex (root reference)
+    # Here: minimum X — change axis if desired
+    start = min(boundary_vertices, key=lambda i: points[i, 0])
 
-# Choose start vertex (root reference)
-# Here: minimum X — change axis if desired
-start = min(boundary_vertices, key=lambda i: points[i, 0])
+    ordered_vertices = [start]
+    prev = None
+    current = start
 
-ordered_vertices = [start]
-prev = None
-current = start
+    while True:
+        neighbors = adj[current]
+        next_v = neighbors[0] if neighbors[0] != prev else neighbors[1]
 
+        if next_v == start:
+            break
+
+        ordered_vertices.append(next_v)
+        prev, current = current, next_v
+
+    ordered_vertices = np.array(ordered_vertices)
+
+    # cyclic shift (edge-based)
+    shift = n_origin_shift % len(ordered_vertices)
+    ordered_vertices = np.roll(ordered_vertices, -shift)
+
+    # Build ordered edges
+    ordered_edges = [
+        (ordered_vertices[i], ordered_vertices[(i + 1) % len(ordered_vertices)])
+        for i in range(len(ordered_vertices))
+    ]
+
+    print("Ordered boundary vertices:", len(ordered_vertices))
+
+    N = len(ordered_edges)
+
+
+    # trailing auto-fills
+
+    n_trail = N - (n_root + n_lead + n_tip)
+    if n_trail <= 0:
+        raise ValueError("Segment sizes exceed boundary length")
+
+    # Slice ordered edges
+    root_edges  = ordered_edges[0 : n_root]
+    lead_edges  = ordered_edges[n_root : n_root + n_lead]
+    tip_edges   = ordered_edges[n_root + n_lead : n_root + n_lead + n_tip]
+    trail_edges = ordered_edges[n_root + n_lead + n_tip :]
+
+    # Convert to vertex sets
+    root_pts  = points[np.unique(np.array(root_edges).flatten())]
+    lead_pts  = points[np.unique(np.array(lead_edges).flatten())]
+    tip_pts   = points[np.unique(np.array(tip_edges).flatten())]
+    trail_pts = points[np.unique(np.array(trail_edges).flatten())]
+
+    L_R = ordered_vertices[n_root]
+    L_T = ordered_vertices[n_root + n_lead]
+    T_T = ordered_vertices[n_root + n_lead + n_tip]
+    T_R = ordered_vertices[0]
+
+    junction_vertices = np.array([L_R, L_T, T_T, T_R])
+    junction_points = points[junction_vertices]
+
+    return (
+    ordered_vertices,
+    root_edges, lead_edges, tip_edges, trail_edges,
+    root_pts, lead_pts, tip_pts, trail_pts, junction_points)
+
+(ordered_vertices, root_edges, lead_edges, tip_edges, trail_edges,
+root_pts, lead_pts, tip_pts, trail_pts, junction_points) = EdgeSolver(n_origin_shift, n_root, n_lead, n_tip)
+
+visEdges = visMesh.extract_feature_edges(boundary_edges=True, non_manifold_edges=False, feature_edges=False, manifold_edges=False)
+
+def updateGeo(visEd):
+    p.clear()
+
+    p.add_mesh(mesh, color="red", opacity=0.8)
+    if visEd == True:
+        p.add_mesh(visEdges, color="blue", line_width=1)
+
+    #Boundries
+    p.add_points(root_pts,  color="red", point_size=12, render_points_as_spheres=True)
+    p.add_points(lead_pts,  color="blue", point_size=12, render_points_as_spheres=True)
+    p.add_points(tip_pts,   color="green", point_size=12, render_points_as_spheres=True)
+    p.add_points(trail_pts, color="orange",   point_size=12, render_points_as_spheres=True)
+
+    #corners
+    p.add_points(junction_points[0], color="pink", point_size=20, render_points_as_spheres=True) # LEAD-ROOT
+    p.add_points(junction_points[1], color="teal", point_size=20, render_points_as_spheres=True) # TIP-LEAD
+    p.add_points(junction_points[2], color="black", point_size=20, render_points_as_spheres=True) # TIP-TRAIL
+    p.add_points(junction_points[3], color="white", point_size=20, render_points_as_spheres=True) # ROOT-TRAIL
+updateGeo(visEd)
 while True:
-    neighbors = adj[current]
-    next_v = neighbors[0] if neighbors[0] != prev else neighbors[1]
+    print("\nAdjust edge parameters:")
+    print(f"shift={n_origin_shift}, root={n_root}, lead={n_lead}, tip={n_tip}")
 
-    if next_v == start:
+    cmd = input(
+        "Enter: shift root lead tip   OR   type 'continue'\n> "
+    ).strip()
+
+    if cmd.lower() == "continue":
         break
 
-    ordered_vertices.append(next_v)
-    prev, current = current, next_v
+    try:
+        n_origin_shift, n_root, n_lead, n_tip = map(int, cmd.split())
+    except ValueError:
+        print("Invalid input. Example: -102 103 501 72 or continue")
+        continue
 
-ordered_vertices = np.array(ordered_vertices)
+    # ---- recompute edges ----
+    (
+        ordered_vertices,
+        root_edges, lead_edges, tip_edges, trail_edges,
+        root_pts, lead_pts, tip_pts, trail_pts, junction_points
+    ) = EdgeSolver(n_origin_shift, n_root, n_lead, n_tip)
+    updateGeo(visEd)
 
-#--------------- PARAMETER VARIABLES ----------------------
-n_origin_shift = -102  # optional shift of start point
-n_root  = 103
-n_lead  = 501
-n_tip   = 72
-#Lattice adjustment values
-size = 1
-
-# cyclic shift (edge-based)
-shift = n_origin_shift % len(ordered_vertices)
-ordered_vertices = np.roll(ordered_vertices, -shift)
-
-# Build ordered edges
-ordered_edges = [
-    (ordered_vertices[i], ordered_vertices[(i + 1) % len(ordered_vertices)])
-    for i in range(len(ordered_vertices))
-]
-
-print("Ordered boundary vertices:", len(ordered_vertices))
-
-N = len(ordered_edges)
-
-
-# trailing auto-fills
-
-n_trail = N - (n_root + n_lead + n_tip)
-if n_trail <= 0:
-    raise ValueError("Segment sizes exceed boundary length")
-
-# Slice ordered edges
-root_edges  = ordered_edges[0 : n_root]
-lead_edges  = ordered_edges[n_root : n_root + n_lead]
-tip_edges   = ordered_edges[n_root + n_lead : n_root + n_lead + n_tip]
-trail_edges = ordered_edges[n_root + n_lead + n_tip :]
-
-# Convert to vertex sets
-root_pts  = points[np.unique(np.array(root_edges).flatten())]
-lead_pts  = points[np.unique(np.array(lead_edges).flatten())]
-tip_pts   = points[np.unique(np.array(tip_edges).flatten())]
-trail_pts = points[np.unique(np.array(trail_edges).flatten())]
-
+visEd = False
 root_len  = EdgeLength(root_edges, points)
 tip_len   = EdgeLength(tip_edges, points)
 lead_len  = EdgeLength(lead_edges, points)
@@ -288,15 +356,6 @@ trail_pts = resample_curve_equal(reorder_curve(trail_pts), VWcount)
 
 print('Verify count, root vertices: '+str(len(root_pts))+", tip vertices: "+str(len(tip_pts)))
 print('Verify count, lead vertices: '+str(len(lead_pts))+", trail vertices: "+str(len(trail_pts)))
-# ---- Junction vertices (derived from segmentation) ----
-L_R = ordered_vertices[n_root]
-L_T = ordered_vertices[n_root + n_lead]
-T_T = ordered_vertices[n_root + n_lead + n_tip]
-T_R = ordered_vertices[0]
-
-junction_vertices = np.array([L_R, L_T, T_T, T_R])
-junction_points = points[junction_vertices]
-
 
 #Algorithm to plot corrisponding diagonal vertices
 geo_linesX = []
@@ -335,8 +394,6 @@ for y in tqdm(range(VCcount),desc='Processing TipTrailY'):
     geo_linesY.append(pv.lines_from_points(geo_curve))
     geo_lineY = pv.merge(geo_linesY)
 
-
-
 end_time = time.perf_counter()
 
 elapsed_time = end_time - start_time
@@ -355,30 +412,11 @@ for cx in geo_linesX:   # list of X geodesic polylines
 
 lattice_nodes = np.array(lattice_nodes)
 
-visEdges = visMesh.extract_feature_edges(boundary_edges=True, non_manifold_edges=False, feature_edges=False, manifold_edges=False)
-
-#visualize
-plotter = pv.Plotter()
-plotter.add_mesh(mesh, color="red", opacity=0.8)
-plotter.add_mesh(visEdges, color="blue", line_width=1)
-plotter.show_axes()
-plotter.show_bounds(grid="back", location="all")
-
 #Lattice
-plotter.add_points(lattice_nodes, color="cyan", point_size=6,render_points_as_spheres=True)
-plotter.add_mesh(geo_lineX)
-plotter.add_mesh(geo_lineY)
+updateGeo(visEd)
 
-#Boundries
-plotter.add_points(root_pts,  color="red", point_size=12, render_points_as_spheres=True)
-plotter.add_points(lead_pts,  color="blue", point_size=12, render_points_as_spheres=True)
-plotter.add_points(tip_pts,   color="green", point_size=12, render_points_as_spheres=True)
-plotter.add_points(trail_pts, color="orange",   point_size=12, render_points_as_spheres=True)
+p.add_points(lattice_nodes, color="cyan", point_size=6,render_points_as_spheres=True)
+p.add_mesh(geo_lineX, line_width=3, color='white')
+p.add_mesh(geo_lineY, line_width=3, color='gray')
 
-#corners
-plotter.add_points(junction_points[0], color="pink", point_size=20, render_points_as_spheres=True) # LEAD-ROOT
-plotter.add_points(junction_points[1], color="teal", point_size=20, render_points_as_spheres=True) # TIP-LEAD
-plotter.add_points(junction_points[2], color="black", point_size=20, render_points_as_spheres=True) # TIP-TRAIL
-plotter.add_points(junction_points[3], color="white", point_size=20, render_points_as_spheres=True) # ROOT-TRAIL
-
-plotter.show()
+input("Press enter to close viewer")
