@@ -9,7 +9,7 @@ import time
 from joblib import Parallel, delayed
 
 
-obj_path = "Models/LatticeTestbenchPYplotTaper.obj"
+obj_path = "Models/LatticeTestBenchComplicatedGeo.obj"
 plotter = pv.Plotter()
 p = BackgroundPlotter()
 mesh = pv.read(obj_path)
@@ -145,13 +145,7 @@ def smooth_geodesic(mesh, start, end, n_points=50, iters=50):
             sub_id = vtk.mutable(0)
             dist2 = vtk.mutable(0.0)
 
-            locator.FindClosestPoint(
-                p,
-                closest_point,
-                cell_id,
-                sub_id,
-                dist2
-            )
+            locator.FindClosestPoint(p,closest_point,cell_id,sub_id,dist2)
 
             cid = int(cell_id)
             cell = mesh.get_cell(cid)
@@ -318,9 +312,7 @@ while True:
     print("\nAdjust edge parameters:")
     print(f"shift={n_origin_shift}, root={n_root}, lead={n_lead}, tip={n_tip}, boundary direction={boundary_dir}")
 
-    cmd = input(
-        "Enter: shift root lead tip boundry  OR   type 'continue' OR type 'help'\n> "
-    ).strip()
+    cmd = input("Enter: shift root lead tip boundry  OR   type 'continue' OR type 'help' OR type 'latticesize'\n> ").strip()
 
     if cmd.lower() == "continue":
         break
@@ -331,6 +323,18 @@ while True:
         print("Boundary Edges: Root chord = Red, Leading edge = Blue, Tip chord = Green, Trailing edge = Orange")
         print("Corners: Root_Lead = Pink, Lead_Tip = Green, Tip_trail = Black, Trail_root = White")
         input("Press enter to continue")
+    if cmd.lower() == "latticesize":
+        print("WARNING: Entering a lattice size too large may result in error")
+        while True:
+            print("Current lattice size = "+ str(size))
+            cmd1 = input('Enter Lattice size: ')
+            try:
+                userLattice= int(cmd1)
+                size = userLattice
+                print(f"Valid input. Lattice size: {str(size)}")
+                break
+            except:
+                print("Not an integer, try again. ")
     else:
         try:
             n_origin_shift, n_root, n_lead, n_tip, boundary_dir = map(int, cmd.split())
@@ -380,15 +384,15 @@ def make_geo(start, end):
 # ---- Root → Trail (X) ----
 geo_linesX_1 = Parallel(n_jobs=-1)(
     delayed(make_geo)(trail_pts[VWcount - 1 - x], root_pts[VCcount - 1 - x])
-    for x in tqdm(range(VCcount), desc="Processing RootTrailX")
+    for x in tqdm(range(VCcount), desc="Processing RootTrailX Geodesics")
 )
 # ---- Lead → Trail (X) ----
 geo_linesX_2 = Parallel(n_jobs=-1)(
-    delayed(make_geo)(trail_pts[x], lead_pts[x + VCcount - 1]) for x in tqdm(range(0, VWcount - VCcount), desc="Processing LeadTrailX")
+    delayed(make_geo)(trail_pts[x], lead_pts[x + VCcount - 1]) for x in tqdm(range(0, VWcount - VCcount), desc="Processing LeadTrailX Geodesics")
 )
 # ---- Tip → Lead (X) ----
 geo_linesX_3 = Parallel(n_jobs=-1)(
-    delayed(make_geo)(tip_pts[x],lead_pts[x])for x in tqdm(range(VCcount), desc="Processing TipLeadX")
+    delayed(make_geo)(tip_pts[x],lead_pts[x])for x in tqdm(range(VCcount), desc="Processing TipLeadX Geodesics")
 )
 # ---- Combine + merge ONCE ----
 geo_linesX = geo_linesX_1 + geo_linesX_2 + geo_linesX_3
@@ -404,16 +408,16 @@ geo_linesX = sorted(geo_linesX, key=curve_key)
 geo_linesY=[]
 # ---- Root → Lead (Y) ----
 geo_linesY_1 = Parallel(n_jobs=-1)(
-    delayed(make_geo)(lead_pts[VWcount - y],root_pts[y - 1]) for y in tqdm(range(VCcount, 0, -1), desc="Processing RootLeadY")
+    delayed(make_geo)(lead_pts[VWcount - y],root_pts[y - 1]) for y in tqdm(range(VCcount, 0, -1), desc="Processing RootLeadY Geodesics")
 )
 # ---- Lead → Trail (Y) ----
 geo_linesY_2 = Parallel(n_jobs=-1)(
     delayed(make_geo)(trail_pts[y + VCcount - 1],lead_pts[y])
-    for y in tqdm(range(VWcount - VCcount), desc="Processing LeadTrailY")
+    for y in tqdm(range(VWcount - VCcount), desc="Processing LeadTrailY Geodesics")
 )
 # ---- Tip → Trail (Y) ----
 geo_linesY_3 = Parallel(n_jobs=-1)(
-    delayed(make_geo)(tip_pts[VCcount - y - 1],trail_pts[y])for y in tqdm(range(VCcount), desc="Processing TipTrailY")
+    delayed(make_geo)(tip_pts[VCcount - y - 1],trail_pts[y])for y in tqdm(range(VCcount), desc="Processing TipTrailY Geodesics")
 )
 # ---- Combine + merge ONCE ----
 geo_linesY = geo_linesY_1 + geo_linesY_2 + geo_linesY_3
@@ -434,42 +438,29 @@ print(f"Execution took: {elapsed_time:.4f} seconds")
 lattice_nodes = []
 polyConnectY = []
 polyConnectX = []
-for cx in geo_linesX:   # one X column
+for cx in tqdm(geo_linesX, desc="Processing Y Inter-Lattice straight lines:"):
     cx_s = sample_polyline(cx.points, 300)
-
-    connectY = []       # reset PER COLUMN
-
+    connectY = []
     for cy in geo_linesY:
         cy_s = sample_polyline(cy.points, 300)
-
-        # SAME intersection logic — untouched
         pA, _ = curve_curve_closest_points(cx_s, cy_s)
-
         lattice_nodes.append(pA)
         connectY.append(pA)
-
-    # connect ONLY adjacent Y points (no wrap, no skipping)
     for l in range(len(connectY) - 1):
         Ypts = np.vstack([connectY[l], connectY[l + 1]])
         polyConnectY.append(pv.lines_from_points(Ypts))
 
-for cy in geo_linesY:   # one X column
+for cy in tqdm(geo_linesY, desc="Processing X Inter-Lattice Straight lines:"):
     cy_s = sample_polyline(cy.points, 300)
-
-    connectX = []       # reset PER COLUMN
-
+    connectX = [] 
     for cx in geo_linesX:
         cx_s = sample_polyline(cx.points, 300)
-
-        # SAME intersection logic — untouched
         pA, _ = curve_curve_closest_points(cy_s, cx_s)
         connectX.append(pA)
-
-    # connect ONLY adjacent Y points (no wrap, no skipping)
     for l in range(len(connectX) - 1):
         Xpts = np.vstack([connectX[l], connectX[l + 1]])
         polyConnectX.append(pv.lines_from_points(Xpts))
-# merge ONCE, AFTER all columns
+
 polyConnectY_mesh = pv.merge(polyConnectY)
 polyConnectX_mesh = pv.merge(polyConnectX)
 lattice_nodes = np.asarray(lattice_nodes)
