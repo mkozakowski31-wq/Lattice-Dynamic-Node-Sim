@@ -394,6 +394,13 @@ geo_linesX_3 = Parallel(n_jobs=-1)(
 geo_linesX = geo_linesX_1 + geo_linesX_2 + geo_linesX_3
 geo_lineX = pv.merge(geo_linesX)
 
+span_dir = tip_pts.mean(axis=0) - root_pts.mean(axis=0)
+span_dir /= np.linalg.norm(span_dir)
+
+def curve_key(curve):
+    return np.dot(curve.points.mean(axis=0), span_dir)
+
+geo_linesX = sorted(geo_linesX, key=curve_key)
 geo_linesY=[]
 # ---- Root → Lead (Y) ----
 geo_linesY_1 = Parallel(n_jobs=-1)(
@@ -413,28 +420,67 @@ geo_linesY = geo_linesY_1 + geo_linesY_2 + geo_linesY_3
 geo_lineY = pv.merge(geo_linesY)
 end_time = time.perf_counter()
 
+span_dir = tip_pts.mean(axis=0) - root_pts.mean(axis=0)
+span_dir /= np.linalg.norm(span_dir)
+
+def curve_key(curve):
+    return np.dot(curve.points.mean(axis=0), span_dir)
+
+geo_linesY = sorted(geo_linesY, key=curve_key)
+
 elapsed_time = end_time - start_time
 print(f"Execution took: {elapsed_time:.4f} seconds")
 
-
 lattice_nodes = []
-
-for cx in geo_linesX:   # list of X geodesic polylines
+polyConnectY = []
+polyConnectX = []
+for cx in geo_linesX:   # one X column
     cx_s = sample_polyline(cx.points, 300)
 
-    for cy in geo_linesY:  # list of Y geodesic polylines
+    connectY = []       # reset PER COLUMN
+
+    for cy in geo_linesY:
         cy_s = sample_polyline(cy.points, 300)
 
-        pA, pB = curve_curve_closest_points(cx_s, cy_s)
-        lattice_nodes.append(pA)
+        # SAME intersection logic — untouched
+        pA, _ = curve_curve_closest_points(cx_s, cy_s)
 
-lattice_nodes = np.array(lattice_nodes)
+        lattice_nodes.append(pA)
+        connectY.append(pA)
+
+    # connect ONLY adjacent Y points (no wrap, no skipping)
+    for l in range(len(connectY) - 1):
+        Ypts = np.vstack([connectY[l], connectY[l + 1]])
+        polyConnectY.append(pv.lines_from_points(Ypts))
+
+for cy in geo_linesY:   # one X column
+    cy_s = sample_polyline(cy.points, 300)
+
+    connectX = []       # reset PER COLUMN
+
+    for cx in geo_linesX:
+        cx_s = sample_polyline(cx.points, 300)
+
+        # SAME intersection logic — untouched
+        pA, _ = curve_curve_closest_points(cy_s, cx_s)
+        connectX.append(pA)
+
+    # connect ONLY adjacent Y points (no wrap, no skipping)
+    for l in range(len(connectX) - 1):
+        Xpts = np.vstack([connectX[l], connectX[l + 1]])
+        polyConnectX.append(pv.lines_from_points(Xpts))
+# merge ONCE, AFTER all columns
+polyConnectY_mesh = pv.merge(polyConnectY)
+polyConnectX_mesh = pv.merge(polyConnectX)
+lattice_nodes = np.asarray(lattice_nodes)
 
 #Lattice
 updateGeo(visEd)
 
 p.add_points(lattice_nodes, color="cyan", point_size=6,render_points_as_spheres=True)
-p.add_mesh(geo_lineX, line_width=3, color='white')
-p.add_mesh(geo_lineY, line_width=3, color='gray')
+# p.add_mesh(geo_lineX, line_width=3, color='white')
+# p.add_mesh(geo_lineY, line_width=3, color='gray')
+p.add_mesh(polyConnectY_mesh, line_width=3, color='black')
+p.add_mesh(polyConnectX_mesh, line_width=3, color='gray')
 
 input("Press enter to close viewer")
