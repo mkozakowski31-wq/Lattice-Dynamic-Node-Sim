@@ -329,12 +329,12 @@ while True:
             print("Current lattice size = "+ str(size))
             cmd1 = input('Enter Lattice size: ')
             try:
-                userLattice= int(cmd1)
+                userLattice= float(cmd1)
                 size = userLattice
                 print(f"Valid input. Lattice size: {str(size)}")
                 break
             except:
-                print("Not an integer, try again. ")
+                print("Not an float, try again. ")
     else:
         try:
             n_origin_shift, n_root, n_lead, n_tip, boundary_dir = map(int, cmd.split())
