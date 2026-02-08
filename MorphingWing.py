@@ -9,7 +9,7 @@ import time
 from joblib import Parallel, delayed
 
 
-obj_path = "Models/LatticeTestBenchComplicatedGeo.obj"
+obj_path = "Models/LatticeTestbenchPYplotTaper.obj"
 plotter = pv.Plotter()
 p = BackgroundPlotter()
 mesh = pv.read(obj_path)
@@ -28,7 +28,7 @@ n_lead  = 501
 n_tip   = 72
 #Lattice adjustment values
 size = 1
-
+ 
 def EdgeLength(edges, points):
     edges = np.asarray(edges)
     p0 = points[edges[:, 0]]
@@ -375,7 +375,7 @@ print('Verify count, lead vertices: '+str(len(lead_pts))+", trail vertices: "+st
 
 #Algorithm to plot corrisponding diagonal vertices
 geo_linesX = []
-start_time = time.perf_counter()
+start_time_geo = time.perf_counter()
 
 mesh.compute_normals(inplace=True)
 def make_geo(start, end):
@@ -422,7 +422,7 @@ geo_linesY_3 = Parallel(n_jobs=-1)(
 # ---- Combine + merge ONCE ----
 geo_linesY = geo_linesY_1 + geo_linesY_2 + geo_linesY_3
 geo_lineY = pv.merge(geo_linesY)
-end_time = time.perf_counter()
+
 
 span_dir = tip_pts.mean(axis=0) - root_pts.mean(axis=0)
 span_dir /= np.linalg.norm(span_dir)
@@ -432,9 +432,11 @@ def curve_key(curve):
 
 geo_linesY = sorted(geo_linesY, key=curve_key)
 
-elapsed_time = end_time - start_time
-print(f"Execution took: {elapsed_time:.4f} seconds")
+end_time_geo = time.perf_counter()
+elapsed_time_geo = end_time_geo - start_time_geo
+print(f"Execution of Geodesics took: {elapsed_time_geo:.4f} seconds")
 
+start_time_str = time.perf_counter()
 lattice_nodes = []
 polyConnectY = []
 polyConnectX = []
@@ -464,7 +466,9 @@ for cy in tqdm(geo_linesY, desc="Processing X Inter-Lattice Straight lines:"):
 polyConnectY_mesh = pv.merge(polyConnectY)
 polyConnectX_mesh = pv.merge(polyConnectX)
 lattice_nodes = np.asarray(lattice_nodes)
-
+end_time_str = time.perf_counter()
+elapsed_time_str = end_time_str - start_time_str
+print(f"Execution of Calculating Straight Lines took: {elapsed_time_str:.4f} seconds")
 #Lattice
 updateGeo(visEd)
 
