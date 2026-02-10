@@ -9,16 +9,22 @@ import time
 from joblib import Parallel, delayed
 
 
-obj_path = "Models/LatticeTestbenchPYplotTaper.obj"
+obj_path_contract = "/Users/marko/Documents/GitHub/marko/Models/LatticeTestbenchPYplotTaper.obj"
+obj_path_extended = "/Users/marko/Documents/GitHub/marko/Models/ExtendedLatticeTestbenchPYplotTaper.obj"
 plotter = pv.Plotter()
 p = BackgroundPlotter()
-mesh = pv.read(obj_path)
+mesh = pv.read(obj_path_contract)
+mesh_extended = pv.read(obj_path_extended)
 mesh = mesh.triangulate()
 visMesh = mesh
 mesh = mesh.clean(tolerance=1e-6)
 visEd = True
 points = mesh.points
 faces = mesh.faces.reshape(-1, 4)[:, 1:]  # (N,3)
+
+mesh_extended = mesh_extended.clean(tolerance=1e-6)
+points_ex = mesh_extended.points
+faces_ex = mesh_extended.faces.reshape(-1, 4)[:, 1:]
 
 #--------------- PARAMETER VARIABLES ----------------------
 boundary_dir = 1
@@ -35,29 +41,41 @@ def EdgeLength(edges, points):
     p1 = points[edges[:, 1]]
     return np.linalg.norm(p1 - p0, axis=1).sum()
 
-def reorder_curve(points):
+def segment_lengths(segments):
+    lengths = []
 
+    for seg in segments:
+        if hasattr(seg, "points"):   # PyVista line
+            pts = seg.points
+        else:
+            pts = np.asarray(seg)
+
+        if len(pts) < 2:
+            continue
+
+        L = np.linalg.norm(pts[1] - pts[0])
+        if L > 0:
+            lengths.append(L)
+
+    return np.asarray(lengths)
+
+def reorder_curve(points, pointA, pointB):
     points = np.asarray(points)
-    used = np.zeros(len(points), dtype=bool)
+    pointA = np.asarray(pointA)
+    pointB = np.asarray(pointB)
 
-    # start from one endpoint (furthest from centroid)
-    centroid = points.mean(axis=0)
-    start = np.argmax(np.linalg.norm(points - centroid, axis=1))
+    # direction from A to B
+    direction = pointB - pointA
+    direction /= np.linalg.norm(direction)
 
-    ordered = [points[start]]
-    used[start] = True
-    current = points[start]
+    # project points onto direction
+    projections = np.dot(points - pointA, direction)
 
-    for _ in range(len(points) - 1):
-        dists = np.linalg.norm(points - current, axis=1)
-        dists[used] = np.inf
-        idx = np.argmin(dists)
+    # sort along direction
+    order = np.argsort(projections)
 
-        ordered.append(points[idx])
-        used[idx] = True
-        current = points[idx]
+    return points[order]
 
-    return np.array(ordered)
 
 def resample_curve_equal(points, N):
     points = np.asarray(points)
@@ -192,7 +210,34 @@ def curve_curve_closest_points(curveA, curveB):
     i = np.argmin(dists)
     return curveA[i], curveB[idx[i]]
 
-def EdgeSolver(n_origin_shift, n_root, n_lead, n_tip, boundary_dir):
+def collect_lattice_segments_along_geodesic(geodesic,opposing_geodesics,samples=300):
+    g_s = sample_polyline(geodesic.points, samples)
+
+    intersection_points = []
+
+    for opp in opposing_geodesics:
+        opp_s = sample_polyline(opp.points, samples)
+        pA, _ = curve_curve_closest_points(g_s, opp_s)
+        intersection_points.append(pA)
+
+    intersection_points = np.asarray(intersection_points)
+
+    # ---- order points along the geodesic arc-length ----
+    tree = cKDTree(g_s)
+    _, idx = tree.query(intersection_points)
+    order = np.argsort(idx)
+
+    ordered_points = intersection_points[order]
+
+    # ---- build straight lattice segments ----
+    segments = []
+    for i in range(len(ordered_points) - 1):
+        seg_pts = np.vstack([ordered_points[i], ordered_points[i + 1]])
+        segments.append(pv.lines_from_points(seg_pts))
+
+    return ordered_points, segments
+
+def EdgeSolver(n_origin_shift, n_root, n_lead, n_tip, boundary_dir, points, faces):
     edges = []
 
     for a, b, c in faces:
@@ -271,26 +316,50 @@ def EdgeSolver(n_origin_shift, n_root, n_lead, n_tip, boundary_dir):
     tip_pts   = points[np.unique(np.array(tip_edges).flatten())]
     trail_pts = points[np.unique(np.array(trail_edges).flatten())]
 
+    leadEdge = pv.lines_from_points(lead_pts)
+    trailEdge = pv.lines_from_points(trail_pts)
+
     L_R = ordered_vertices[n_root]
     L_T = ordered_vertices[n_root + n_lead]
     T_T = ordered_vertices[n_root + n_lead + n_tip]
     T_R = ordered_vertices[0]
 
+
     junction_vertices = np.array([L_R, L_T, T_T, T_R])
     junction_points = points[junction_vertices]
 
-    return (
-    ordered_vertices,
-    root_edges, lead_edges, tip_edges, trail_edges,
-    root_pts, lead_pts, tip_pts, trail_pts, junction_points)
+    return (root_edges, lead_edges, tip_edges, trail_edges,
+    root_pts, lead_pts, tip_pts, trail_pts, junction_points, leadEdge, trailEdge)
 
-(ordered_vertices, root_edges, lead_edges, tip_edges, trail_edges,
-root_pts, lead_pts, tip_pts, trail_pts, junction_points) = EdgeSolver(n_origin_shift, n_root, n_lead, n_tip , boundary_dir)
+def Resampler(root_pts, tip_pts, lead_pts, trail_pts,root_edges,points,size):
+    root_len  = EdgeLength(root_edges, points)
+    tip_len   = EdgeLength(tip_edges, points)
+    lead_len  = EdgeLength(lead_edges, points)
+    trail_len = EdgeLength(trail_edges, points)
+
+    if root_len >= tip_len:
+        VCcount = int(np.ceil(root_len/size))
+    else:
+        VCcount = int(np.ceil(root_len/size))
+    if lead_len >= trail_len:
+        VWcount = int(np.ceil(lead_len/size))
+    else:
+        VWcount = int(np.ceil(trail_len/size))
+
+    root_pts = resample_curve_equal(reorder_curve(root_pts,junction_points[3], junction_points[0]),VCcount)
+    tip_pts = resample_curve_equal(reorder_curve(tip_pts,junction_points[1], junction_points[2]), VCcount)
+    lead_pts = resample_curve_equal(reorder_curve(lead_pts,junction_points[0], junction_points[1]), VWcount)
+    trail_pts = resample_curve_equal(reorder_curve(trail_pts,junction_points[2], junction_points[3]), VWcount)
+
+    return root_pts, tip_pts, lead_pts, trail_pts, VWcount, VCcount
+(root_edges, lead_edges, tip_edges, trail_edges,
+root_pts, lead_pts, tip_pts, trail_pts, junction_points, leadEdge, trailEdge) = EdgeSolver(n_origin_shift, n_root, n_lead, n_tip , boundary_dir, points, faces)
 
 visEdges = visMesh.extract_feature_edges(boundary_edges=True, non_manifold_edges=False, feature_edges=False, manifold_edges=False)
 
-def updateGeo(visEd):
-    p.clear()
+def updateGeo(mesh, root_pts, lead_pts, tip_pts, trail_pts, visEd, clear):
+    if clear == True:
+        p.clear()
 
     p.add_mesh(mesh, color="red", opacity=0.8)
     if visEd == True:
@@ -307,7 +376,8 @@ def updateGeo(visEd):
     p.add_points(junction_points[1], color="teal", point_size=20, render_points_as_spheres=True) # TIP-LEAD
     p.add_points(junction_points[2], color="black", point_size=20, render_points_as_spheres=True) # TIP-TRAIL
     p.add_points(junction_points[3], color="white", point_size=20, render_points_as_spheres=True) # ROOT-TRAIL
-updateGeo(visEd)
+
+updateGeo(mesh, root_pts, lead_pts, tip_pts, trail_pts, visEd, True)
 while True:
     print("\nAdjust edge parameters:")
     print(f"shift={n_origin_shift}, root={n_root}, lead={n_lead}, tip={n_tip}, boundary direction={boundary_dir}")
@@ -322,8 +392,8 @@ while True:
         print("Adjust boundry direction (Counter vs. Clockwise), by inputing 1 or -1 to boundry index")
         print("Boundary Edges: Root chord = Red, Leading edge = Blue, Tip chord = Green, Trailing edge = Orange")
         print("Corners: Root_Lead = Pink, Lead_Tip = Green, Tip_trail = Black, Trail_root = White")
-        input("Press enter to continue")
-    if cmd.lower() == "latticesize":
+        input("Press a key to return")
+    elif cmd.lower() == "latticesize":
         print("WARNING: Entering a lattice size too large may result in error")
         while True:
             print("Current lattice size = "+ str(size))
@@ -344,31 +414,13 @@ while True:
 
     # ---- recompute edges ----
     (
-        ordered_vertices,
         root_edges, lead_edges, tip_edges, trail_edges,
-        root_pts, lead_pts, tip_pts, trail_pts, junction_points
-    ) = EdgeSolver(n_origin_shift, n_root, n_lead, n_tip, boundary_dir)
-    updateGeo(visEd)
+        root_pts, lead_pts, tip_pts, trail_pts, junction_points, leadEdge, trailEdge 
+    ) = EdgeSolver(n_origin_shift, n_root, n_lead, n_tip, boundary_dir, points, faces)
+    updateGeo(mesh, root_pts, lead_pts, tip_pts, trail_pts, visEd, True)
 
 visEd = False
-root_len  = EdgeLength(root_edges, points)
-tip_len   = EdgeLength(tip_edges, points)
-lead_len  = EdgeLength(lead_edges, points)
-trail_len = EdgeLength(trail_edges, points)
-
-if root_len >= tip_len:
-    VCcount = int(np.ceil(root_len/size))
-else:
-    VCcount = int(np.ceil(root_len/size))
-if lead_len >= trail_len:
-    VWcount = int(np.ceil(lead_len/size))
-else:
-    VWcount = int(np.ceil(trail_len/size))
-
-root_pts = resample_curve_equal(reorder_curve(root_pts),VCcount)
-tip_pts = resample_curve_equal(reorder_curve(tip_pts), VCcount)
-lead_pts = resample_curve_equal(reorder_curve(lead_pts), VWcount)
-trail_pts = resample_curve_equal(reorder_curve(trail_pts), VWcount)
+(root_pts, tip_pts, lead_pts, trail_pts, VWcount, VCcount) = Resampler(root_pts, tip_pts, lead_pts, trail_pts,root_edges,points,size)
 
 print('Verify count, root vertices: '+str(len(root_pts))+", tip vertices: "+str(len(tip_pts)))
 print('Verify count, lead vertices: '+str(len(lead_pts))+", trail vertices: "+str(len(trail_pts)))
@@ -383,16 +435,16 @@ def make_geo(start, end):
     return pv.lines_from_points(curve)
 # ---- Root → Trail (X) ----
 geo_linesX_1 = Parallel(n_jobs=-1)(
-    delayed(make_geo)(trail_pts[VWcount - 1 - x], root_pts[VCcount - 1 - x])
+    delayed(make_geo)(trail_pts[VWcount - 1 - x], root_pts[x - VCcount])
     for x in tqdm(range(VCcount), desc="Processing RootTrailX Geodesics")
 )
 # ---- Lead → Trail (X) ----
 geo_linesX_2 = Parallel(n_jobs=-1)(
-    delayed(make_geo)(trail_pts[x], lead_pts[x + VCcount - 1]) for x in tqdm(range(0, VWcount - VCcount), desc="Processing LeadTrailX Geodesics")
+    delayed(make_geo)(trail_pts[x], lead_pts[VWcount-x-VCcount]) for x in tqdm(range(0, VWcount - VCcount), desc="Processing LeadTrailX Geodesics")
 )
 # ---- Tip → Lead (X) ----
 geo_linesX_3 = Parallel(n_jobs=-1)(
-    delayed(make_geo)(tip_pts[x],lead_pts[x])for x in tqdm(range(VCcount), desc="Processing TipLeadX Geodesics")
+    delayed(make_geo)(tip_pts[x],lead_pts[VWcount-x-1])for x in tqdm(range(VCcount), desc="Processing TipLeadX Geodesics")
 )
 # ---- Combine + merge ONCE ----
 geo_linesX = geo_linesX_1 + geo_linesX_2 + geo_linesX_3
@@ -408,11 +460,11 @@ geo_linesX = sorted(geo_linesX, key=curve_key)
 geo_linesY=[]
 # ---- Root → Lead (Y) ----
 geo_linesY_1 = Parallel(n_jobs=-1)(
-    delayed(make_geo)(lead_pts[VWcount - y],root_pts[y - 1]) for y in tqdm(range(VCcount, 0, -1), desc="Processing RootLeadY Geodesics")
+    delayed(make_geo)(lead_pts[VCcount -y],root_pts[y - 1]) for y in tqdm(range(VCcount, 0, -1), desc="Processing RootLeadY Geodesics")
 )
 # ---- Lead → Trail (Y) ----
 geo_linesY_2 = Parallel(n_jobs=-1)(
-    delayed(make_geo)(trail_pts[y + VCcount - 1],lead_pts[y])
+    delayed(make_geo)(trail_pts[y + VCcount - 1],lead_pts[VWcount-y-1])
     for y in tqdm(range(VWcount - VCcount), desc="Processing LeadTrailY Geodesics")
 )
 # ---- Tip → Trail (Y) ----
@@ -469,10 +521,27 @@ lattice_nodes = np.asarray(lattice_nodes)
 end_time_str = time.perf_counter()
 elapsed_time_str = end_time_str - start_time_str
 print(f"Execution of Calculating Straight Lines took: {elapsed_time_str:.4f} seconds")
-#Lattice
-updateGeo(visEd)
 
+#Lattice    
+
+gx = geo_linesX[9]
+
+pts_along_gx, straight_segments = collect_lattice_segments_along_geodesic(gx,geo_linesY)
+lengths = segment_lengths(straight_segments)
+print("Per-segment lengths:", lengths)
+print("Total lattice length:", lengths.sum())
+# visualize
+
+updateGeo(mesh, root_pts, lead_pts, tip_pts, trail_pts, visEd, True)
+(root_edges, lead_edges, tip_edges, trail_edges,root_pts, lead_pts, tip_pts, trail_pts, junction_points, leadEdge, trailEdge) = EdgeSolver(n_origin_shift, n_root, n_lead, n_tip, boundary_dir, points_ex, faces_ex)
+(root_pts, tip_pts, lead_pts, trail_pts, VWcount, VCcount) = Resampler(root_pts, tip_pts, lead_pts, trail_pts,root_edges,points,size)
+updateGeo(mesh_extended, root_pts, lead_pts, tip_pts, trail_pts, visEd, False)
+
+p.add_points(pts_along_gx, color="yellow", point_size=10)
+p.add_mesh(pv.merge(straight_segments), color="purple", line_width=4)
 p.add_points(lattice_nodes, color="cyan", point_size=6,render_points_as_spheres=True)
+p.add_mesh(leadEdge, color="blue", line_width=3)
+p.add_mesh(trailEdge, color='orange', line_width=3)
 # p.add_mesh(geo_lineX, line_width=3, color='white')
 # p.add_mesh(geo_lineY, line_width=3, color='gray')
 p.add_mesh(polyConnectY_mesh, line_width=3, color='black')
