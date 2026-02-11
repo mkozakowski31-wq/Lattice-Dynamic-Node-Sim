@@ -528,20 +528,22 @@ gx = geo_linesX[9]
 
 pts_along_gx, straight_segments = collect_lattice_segments_along_geodesic(gx,geo_linesY)
 lengths = segment_lengths(straight_segments)
-print("Per-segment lengths:", lengths)
 print("Total lattice length:", lengths.sum())
 # visualize
 
 updateGeo(mesh, root_pts, lead_pts, tip_pts, trail_pts, visEd, True)
-(root_edges, lead_edges, tip_edges, trail_edges,root_pts, lead_pts, tip_pts, trail_pts, junction_points, leadEdge, trailEdge) = EdgeSolver(n_origin_shift, n_root, n_lead, n_tip, boundary_dir, points_ex, faces_ex)
-(root_pts, tip_pts, lead_pts, trail_pts, VWcount, VCcount) = Resampler(root_pts, tip_pts, lead_pts, trail_pts,root_edges,points,size)
+(root_edges, lead_edges, tip_edges, trail_edges, root_pts, lead_pts, tip_pts, trail_pts, junction_points, leadEdge, trailEdge) = EdgeSolver(
+n_origin_shift, n_root, n_lead, n_tip, boundary_dir, points_ex, faces_ex)
+root_pts = resample_curve_equal(reorder_curve(root_pts,junction_points[3], junction_points[0]),VCcount)
+tip_pts = resample_curve_equal(reorder_curve(tip_pts,junction_points[1], junction_points[2]), VCcount)
+
 updateGeo(mesh_extended, root_pts, lead_pts, tip_pts, trail_pts, visEd, False)
 
 p.add_points(pts_along_gx, color="yellow", point_size=10)
 p.add_mesh(pv.merge(straight_segments), color="purple", line_width=4)
 p.add_points(lattice_nodes, color="cyan", point_size=6,render_points_as_spheres=True)
-p.add_mesh(leadEdge, color="blue", line_width=3)
-p.add_mesh(trailEdge, color='orange', line_width=3)
+p.add_mesh(leadEdge, color="blue", line_width=10)
+p.add_mesh(trailEdge, color='orange', line_width=10)
 # p.add_mesh(geo_lineX, line_width=3, color='white')
 # p.add_mesh(geo_lineY, line_width=3, color='gray')
 p.add_mesh(polyConnectY_mesh, line_width=3, color='black')
