@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import numpy as np
 import pyvista as pv
 from scipy.spatial import cKDTree
@@ -5,7 +6,7 @@ from tqdm import tqdm
 import time
 
 from stage_1_boundary import (EdgeSolver, resample_curve_equal, reorder_curve, updateGeo)
-from stage_4_deformation import ZSequence, ZStart
+
 
 def sample_polyline(points, n=200):
     t  = np.linspace(0, 1, len(points))
@@ -88,21 +89,26 @@ def build_lattice(p, mesh, mesh_extended, geo_linesX, geo_linesY, root_pts, lead
 
     elapsed_str = time.perf_counter() - start_time_str
     print(f"Execution of Calculating Straight Lines took: {elapsed_str:.4f} seconds")
-
-    gx = geo_linesX[9]
-    pts_along_gx, straight_segs = collect_lattice_segments_along_geodesic(gx, geo_linesY)
-    lengths = segment_lengths(straight_segs)
-    print("Total lattice length:", lengths.sum())
+    class Geolines:
+        Geo_linesX = geo_linesX
+        Geo_linesY = geo_linesY
     geo_lines_seqX = []
     geo_lines_seqY = []
     z_sequences = []
+    @dataclass
+    class ZSequence:
+        StartLineX: bool
+        TipPt: int
+        PolyDatArr: list
+        TopCorner: bool
+        BotCorner: bool
 
     for f in range(1, len(tip_pts)+1, 1):
         x=0
         geo_lines_seqX = []
-        if f != len(tip_pts):
+        if f != 1:
             Corner = False
-            if f == 1:
+            if f == len(tip_pts):
                 Corner = True
             geo_lines_seqX.append(geo_linesX[VWcount+VCcount-f])
             while (VWcount-f)-(x*VCcount)+x >= 0:
@@ -114,9 +120,9 @@ def build_lattice(p, mesh, mesh_extended, geo_linesX, geo_linesY, root_pts, lead
             z_sequences.append(ZSequence(StartLineX= True,TipPt= f, PolyDatArr=geo_lines_seqX, TopCorner= Corner, BotCorner= False))
         x = 0
         geo_lines_seqY = []
-        if f != 1:
+        if f != len(tip_pts):
             Corner = False
-            if f == len(tip_pts):
+            if f == 1:
                 Corner = True
             geo_lines_seqY.append(geo_linesY[VWcount+f-1])
             while (VWcount-f)-(x*VCcount)+x >= 0:
@@ -127,12 +133,8 @@ def build_lattice(p, mesh, mesh_extended, geo_linesX, geo_linesY, root_pts, lead
                 x+= 1
             z_sequences.append(ZSequence(StartLineX= False, TipPt= f, PolyDatArr=geo_lines_seqY, TopCorner= False, BotCorner= Corner))
 
-    print("lenght" + str(len(z_sequences)))
-
-
     geo_lines_seqX = []
     geo_lines_seqY = []
-
     for seq in z_sequences:
         if seq.StartLineX == True:
             geo_lines_seqX.extend(seq.PolyDatArr)
@@ -150,12 +152,10 @@ def build_lattice(p, mesh, mesh_extended, geo_linesX, geo_linesY, root_pts, lead
     p.add_mesh(geo_lines_seqX, color="blue", line_width=7)
 
     # ---- Add lattice to viewer ----
-    p.add_points(pts_along_gx, color="yellow", point_size=10)
-    p.add_mesh(pv.merge(straight_segs), color="purple", line_width=4)
     p.add_points(lattice_nodes, color="cyan", point_size=6, render_points_as_spheres=True)
-    p.add_mesh(leadEdge, color="blue", line_width=10)
-    p.add_mesh(trailEdge, color="orange", line_width=10)
+    p.add_mesh(leadEdge, color="blue", line_width=3)
+    p.add_mesh(trailEdge, color="orange", line_width=3)
     p.add_mesh(polyConnectY_mesh, line_width=3, color="black")
     p.add_mesh(polyConnectX_mesh, line_width=3, color="gray")
 
-    input("Press enter to close viewer")
+    return z_sequences, Geolines

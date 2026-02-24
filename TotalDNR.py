@@ -292,11 +292,9 @@ def order_polyline_from_pv(curve):
     return curve.points[ordered]
 
 def geodesic_shoot(mesh, start_pt, direction, length, step=1.0):
-    # Ensure normals exist
     if mesh.point_normals is None:
         mesh.compute_normals(inplace=True)
 
-    # VTK closest point locator
     locator = vtk.vtkStaticCellLocator()
     locator.SetDataSet(mesh)
     locator.BuildLocator()
@@ -309,8 +307,6 @@ def geodesic_shoot(mesh, start_pt, direction, length, step=1.0):
     traveled = 0.0
 
     while traveled < length:
-
-        # ---- Find closest surface point and normal ----
         closest = [0.0, 0.0, 0.0]
         cell_id = vtk.mutable(0)
         sub_id = vtk.mutable(0)
@@ -325,11 +321,9 @@ def geodesic_shoot(mesh, start_pt, direction, length, step=1.0):
         N = mesh.point_normals[vids].mean(axis=0)
         N /= np.linalg.norm(N)
 
-        # ---- Project direction onto tangent plane ----
         d = d - np.dot(d, N) * N
         d /= np.linalg.norm(d)
 
-        # ---- Step forward ----
         p = p + d * step
         pts.append(p.copy())
 
@@ -353,7 +347,7 @@ def direction_between(d1, d2):
 
     return mid / np.linalg.norm(mid)
 
-def polylines_edges_cross(polyA, polyB, percent_error=2.0):
+def polylines_edges_cross(polyA, polyB, percent_error=0.1):
 
     A = np.asarray(polyA)
     B = np.asarray(polyB)
@@ -771,7 +765,7 @@ def create_bounds(junction_points, LeadBound):
 def calculate_line_angle(new_polyArr,lengths, seg_bound_lineS, seg_bound_lineC, p1, sEdge, mesh):
     print(lengths)
     print(len(lengths))
-    for x in range(15):
+    for x in range(20):
         seg_dir = direction_between(seg_bound_lineS, seg_bound_lineC)
         geo_trace = (geodesic_shoot(mesh, start_pt=p1, direction=seg_dir,length=50,step=0.02))
         new_poly = segments_on_polyline_forward(start_pt=p1, polyline_pts=geo_trace.points, lengths=lengths)

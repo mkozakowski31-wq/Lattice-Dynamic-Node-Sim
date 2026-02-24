@@ -1,5 +1,6 @@
 import numpy as np
 import pyvista as pv
+from dataclasses import dataclass
 from collections import Counter
 
 
@@ -158,7 +159,6 @@ def Resampler(root_pts, tip_pts, lead_pts, trail_pts, root_edges, tip_edges, lea
 
     return root_pts, tip_pts, lead_pts, trail_pts, VWcount, VCcount
 
-
 def updateGeo(p, mesh, root_pts, lead_pts, tip_pts, trail_pts,
               junction_points, visEdges, visEd, clear):
     if clear:
@@ -175,9 +175,7 @@ def updateGeo(p, mesh, root_pts, lead_pts, tip_pts, trail_pts,
     p.add_points(junction_points[2], color="black", point_size=20, render_points_as_spheres=True)
     p.add_points(junction_points[3], color="white", point_size=20, render_points_as_spheres=True)
 
-
-def define_boundaries(p, mesh, points, faces, visEdges,
-                      n_origin_shift, n_root, n_lead, n_tip, boundary_dir, size):
+def define_boundaries(p, mesh, points, faces, visEdges, n_origin_shift, n_root, n_lead, n_tip, boundary_dir, size):
     """Interactive terminal loop. Returns fully solved + resampled boundary data."""
 
     (root_edges, lead_edges, tip_edges, trail_edges, root_pts, lead_pts, tip_pts, trail_pts,
@@ -240,3 +238,5 @@ def define_boundaries(p, mesh, points, faces, visEdges,
 
     return (root_edges, lead_edges, tip_edges, trail_edges, root_pts, lead_pts, tip_pts, trail_pts,junction_points,
             leadEdge, trailEdge, VWcount, VCcount, n_origin_shift, n_root, n_lead, n_tip, boundary_dir, size)
+
+
