@@ -3,7 +3,7 @@ from pyvistaqt import BackgroundPlotter
 import numpy as np
 
 from stage_1_boundary import load_meshes, define_boundaries
-from stage_2_geodesics import compute_geodesics
+from stage_2_geodesics import compute_geodesics, smooth_geodesic
 from stage_3_lattice   import build_lattice
 from stage_4_deformation import DeformedMesh
 
@@ -53,12 +53,40 @@ z_segments, Geolines = build_lattice(
 
 result = DeformedMesh(obj_path_contract, n_origin_shift, n_root, n_lead, n_tip, boundary_dir, VCcount)
 
-print(result.tip_pts)
-segCurves =[]
-(segs, shot, segCurve) = result.Z_SegTopographicalDeformation(Geolines, z_segments,5)
-print(np.vstack(segCurve))
+(segs, shot, CsegCurve) = result.Z_SegTopographicalDeformation(Geolines, z_segments,0)
+(segs, shot, CsegCurves) = result.Z_SegTopographicalDeformation(Geolines, z_segments, len(z_segments)-1)
+CsegCurves = np.vstack(CsegCurves)
+CsegCurve = np.vstack(CsegCurve)
 
-p.add_mesh(pv.lines_from_points(np.vstack(segCurve)), color="orange", line_width = 14)
+result = DeformedMesh(obj_path_extended, n_origin_shift, n_root, n_lead, n_tip, boundary_dir, VCcount)
+
+(segs, shot, segCurve) = result.Z_SegTopographicalDeformation(Geolines, z_segments,0)
+(segs, shot, segCurves) = result.Z_SegTopographicalDeformation(Geolines, z_segments, len(z_segments)-1)
+segCurves = np.vstack(segCurves)
+segCurve = np.vstack(segCurve)
+# print(segCurve[-1])
+# print(segCurves[-1])
+print("_______________")
+print(len(CsegCurves))
+print(CsegCurves)
+print("_______________")
+print(len(CsegCurve))
+print(CsegCurve)
+print("_______________")
+slice = smooth_geodesic(result.mesh, segCurve[-1], segCurves[-1],n_points=60, iters=80)
+
+p.add_mesh(pv.lines_from_points(segCurve), color="orange", line_width = 15)
+p.add_mesh(pv.lines_from_points(segCurves), color="orange", line_width = 15)
+p.add_mesh(pv.lines_from_points(CsegCurve), color="orange", line_width = 15)
+p.add_mesh(pv.lines_from_points(CsegCurves), color="orange", line_width = 15)
+p.add_points(segCurve, color="blue",render_points_as_spheres=True, point_size = 20)
+p.add_points(segCurves, color="blue",render_points_as_spheres=True, point_size = 20)
+p.add_points(CsegCurve, color="blue",render_points_as_spheres=True, point_size = 20)
+p.add_points(CsegCurves, color="blue",render_points_as_spheres=True, point_size = 20)
+p.add_mesh(shot,color="green", line_width = 14)
+p.add_mesh(segs,color="green", line_width = 14)
+p.add_mesh(pv.lines_from_points(slice),color="green", line_width = 14)
+p.add_mesh(result.mesh)
 
 # for i in range(20):
 #     (segs, shot, segCurve) = result.LatticeTopographicalDeformation(Geolines, z_segments,i)

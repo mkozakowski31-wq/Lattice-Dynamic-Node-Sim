@@ -99,7 +99,7 @@ def geodesic_shoot(mesh, start_pt, direction, length, step=1.0):
 
     return pv.lines_from_points(np.array(pts))
 
-def segments_on_polyline_forward(start_pt, polyline_pts, lengths, eps=1e-12):
+def segments_on_polyline_forward(start_pt, polyline_pts, lengths, eps=1e-5):
     curve = np.asarray(polyline_pts, dtype=float)
 
     pts = [np.asarray(start_pt, float)]
@@ -112,7 +112,6 @@ def segments_on_polyline_forward(start_pt, polyline_pts, lengths, eps=1e-12):
         center = pts[-1]
         found = False
 
-        # search ONLY forward along curve
         for i in range(idx, len(curve) - 1):
 
             a = curve[i]
@@ -212,23 +211,32 @@ def polylineIntersect(polyA, polyB, percent_error=0.1):
 
 
 def calculate_line_angle(mesh, startPt,lengths, sEdge, seg_bound_lineS, seg_bound_lineC):
-    new_polyArr = []
     print(lengths)
     print(len(lengths))
     for x in range(25):
         seg_dir = direction_between(seg_bound_lineS, seg_bound_lineC)
-        geo_trace = geodesic_shoot(mesh, start_pt=startPt, direction=seg_dir,length=50,step=0.01)
+        geo_trace = geodesic_shoot(mesh, start_pt=startPt, direction=seg_dir,length=(sum(lengths)*2),step=0.01)
         new_poly = segments_on_polyline_forward(start_pt=startPt, polyline_pts=geo_trace.points, lengths=lengths)
         intersection = polylineIntersect((pv.lines_from_points(new_poly)).points, sEdge.points, percent_error=0.1)
         if intersection == True:
-            print('contact')
             seg_bound_lineC = seg_dir
+            print("contact")
         else: 
-            print('no contact')
             seg_bound_lineS = seg_dir
-    new_polyArr.extend(new_poly)
-            
-    return geo_trace
+            print("no contact")
+    while intersection == True:
+        seg_dir = direction_between(seg_bound_lineS, seg_bound_lineC)
+        geo_trace = geodesic_shoot(mesh, start_pt=startPt, direction=seg_dir,length=sum(lengths) * 1.5,step=0.01)
+        new_poly = segments_on_polyline_forward(start_pt=startPt, polyline_pts=geo_trace.points, lengths=lengths)
+        intersection = polylineIntersect((pv.lines_from_points(new_poly)).points, sEdge.points, percent_error=0.1)
+        if intersection == True:
+            seg_bound_lineC = seg_dir
+            print("contact")
+        else: 
+            seg_bound_lineS = seg_dir  
+            print("no contact")
+            break
+    return geo_trace, new_poly
 
 class DeformedMesh:
     def __init__(self, mesh_path, n_origin_shift, n_root, n_lead, n_tip, boundary_dir, VCcount):
@@ -266,11 +274,13 @@ class DeformedMesh:
             lengths = segment_lengths(straight_segs)
             seg_dir = self.corners[1] - self.tip_pts[int(z_segment.TipPt)-1]
             sEdge = self.leadEdge
+            isX = False
         else: 
             pts_along_gx, straight_segs = collect_lattice_segments_along_geodesic(gl, Geolines.Geo_linesX)
             lengths = segment_lengths(straight_segs)
             seg_dir = self.corners[2] - self.tip_pts[int(z_segment.TipPt)-1]
             sEdge = self.trailEdge
+            isX = True
         print("Total lattice length:", lengths.sum())
 
         if z_segment.TipPt == 1: 
@@ -279,16 +289,16 @@ class DeformedMesh:
             seg_dir = self.corners[0]-self.corners[1]
             SDir = seg_dir / np.linalg.norm(seg_dir)
 
-            shot = calculate_line_angle(self.mesh, self.tip_pts[int(z_segment.TipPt)-1], lengths, sEdge, SDir, CDir)
-            segments_on_curve.append(segments_on_polyline_forward(self.tip_pts[int(z_segment.TipPt)-1], shot.points, lengths))
+            (geotrace, shot) = calculate_line_angle(self.mesh, self.tip_pts[int(z_segment.TipPt)-1], lengths, sEdge, SDir, CDir)
+            segments_on_curve.append(shot)
         elif z_segment.TipPt == len(self.tip_pts):
             seg_dir = self.corners[1] - self.corners[2]
             CDir = seg_dir / np.linalg.norm(seg_dir)
             seg_dir = self.corners[3]-self.corners[2]
             SDir = seg_dir / np.linalg.norm(seg_dir)
 
-            shot = calculate_line_angle(self.mesh, self.tip_pts[int(z_segment.TipPt)-1], lengths, sEdge, SDir, CDir)
-            segments_on_curve.append(segments_on_polyline_forward(self.tip_pts[int(z_segment.TipPt)-1], shot.points, lengths))
+            (geotrace, shot) = calculate_line_angle(self.mesh, self.tip_pts[int(z_segment.TipPt)-1], lengths, sEdge, SDir, CDir)
+            segments_on_curve.append(shot)
         else:
             print("No Corner")
             CDir = seg_dir / np.linalg.norm(seg_dir)
@@ -296,37 +306,39 @@ class DeformedMesh:
             seg_dir = intersectionPts[(int(len(intersectionPts)/2))] - self.tip_pts[int(z_segment.TipPt)-1]
             SDir = seg_dir / np.linalg.norm(seg_dir)
 
-            shot = calculate_line_angle(self.mesh, self.tip_pts[int(z_segment.TipPt)-1], lengths, sEdge, SDir, CDir)
-            segments_on_curve.append(segments_on_polyline_forward(self.tip_pts[int(z_segment.TipPt)-1], shot.points, lengths))
+            (geotrace, shot) = calculate_line_angle(self.mesh, self.tip_pts[int(z_segment.TipPt)-1], lengths, sEdge, SDir, CDir)
+            segments_on_curve.append(shot)
         print("_________________________")
         print(segments_on_curve[-1][-1])
         print("__________________")
-        # i = 1
-        # if sEdge == self.leadEdge:
-        #     print("running this if to create ")
-        #     sEdge = self.trailEdge
-        #     pts_along_gx, straight_segs = collect_lattice_segments_along_geodesic(z_segment.PolyDatArr[i], Geolines.Geo_linesY)
-        #     lengths = segment_lengths(straight_segs)
+        for i in range(1,len(z_segment.PolyDatArr)):
+            if isX == True:
+                pts_along_gx, straight_segs = collect_lattice_segments_along_geodesic(z_segment.PolyDatArr[i], Geolines.Geo_linesY)
+                lengths = segment_lengths(straight_segs)
+                isX = False
+            else: 
+                pts_along_gx, straight_segs = collect_lattice_segments_along_geodesic(z_segment.PolyDatArr[i], Geolines.Geo_linesX)
+                lengths = segment_lengths(straight_segs)
+                isX = True
+            if sEdge == self.leadEdge:
+                sEdge = self.trailEdge
 
-        #     seg_dir = self.corners[2] - self.corners[1]
-        #     CDir = seg_dir / np.linalg.norm(seg_dir)
-        #     seg_dir = self.corners[0]-self.corners[1]
-        #     SDir = seg_dir / np.linalg.norm(seg_dir)
+                seg_dir = self.corners[2] - self.corners[1]
+                CDir = seg_dir / np.linalg.norm(seg_dir)
+                seg_dir = self.corners[0]-self.corners[1]
+                SDir = seg_dir / np.linalg.norm(seg_dir)
 
-        #     shot = calculate_line_angle(self.mesh, segments_on_curve[-1][-1], lengths, sEdge, SDir, CDir)
-        #     segments_on_curve.append(segments_on_polyline_forward(self.tip_pts[int(z_segment.TipPt)-1], shot.points, lengths))
-        # else:
-        #     sEdge = self.leadEdge
-        #     pts_along_gx, straight_segs = collect_lattice_segments_along_geodesic(z_segment.PolyDatArr[i], Geolines.Geo_linesY)
-        #     lengths = segment_lengths(straight_segs)
+                (geotrace, shot) = calculate_line_angle(self.mesh, segments_on_curve[-1][-1], lengths, sEdge, SDir, CDir)
+                segments_on_curve.append(shot)
+            else:
+                sEdge = self.leadEdge
 
-        #     seg_dir = self.corners[1] - self.corners[2]
-        #     CDir = seg_dir / np.linalg.norm(seg_dir)
-        #     seg_dir = self.corners[3]-self.corners[2]
-        #     SDir = seg_dir / np.linalg.norm(seg_dir)
+                seg_dir = self.corners[1] - self.corners[2]
+                CDir = seg_dir / np.linalg.norm(seg_dir)
+                seg_dir = self.corners[3]-self.corners[2]
+                SDir = seg_dir / np.linalg.norm(seg_dir)
 
-        #     shot = calculate_line_angle(self.mesh, segments_on_curve[-1][-1], lengths, sEdge, SDir, CDir)
-        #     segments_on_curve.append(segments_on_polyline_forward(self.tip_pts[int(z_segment.TipPt)-1], shot.points, lengths))
-        #     sEdge == self.leadEdge
+                (geotrace, shot) = calculate_line_angle(self.mesh, segments_on_curve[-1][-1], lengths, sEdge, SDir, CDir)
+                segments_on_curve.append(shot)
 
-        return straight_segs, shot, segments_on_curve
+        return geotrace, shot, segments_on_curve
