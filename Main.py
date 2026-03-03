@@ -8,8 +8,8 @@ from stage_3_lattice   import build_lattice
 from stage_4_deformation import DeformedMesh
 
 # ---- Paths ----
-obj_path_contract = "/Users/marko/Documents/GitHub/marko/Models/LatticeTestbenchPYplotTaper.obj"
-obj_path_extended = "/Users/marko/Documents/GitHub/marko/Models/ExtendedLatticeTestbenchPYplotTaper.obj"
+obj_path_contract = "Models/ExtendedLatticeTestbenchPYplotTaper.obj"
+obj_path_extended = "Models/ExtendedLatticeTestbenchPYplotTaper.obj"
 
 # ---- Parameters ----
 boundary_dir   = 1
