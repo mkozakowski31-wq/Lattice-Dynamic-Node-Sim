@@ -83,79 +83,79 @@ def build_lattice(p, mesh, mesh_extended, geo_linesX, geo_linesY, root_pts, lead
             Xpts = np.vstack([connectX[l], connectX[l + 1]])
             polyConnectX.append(pv.lines_from_points(Xpts))
 
+    polyConnectY = [seg for seg in polyConnectY if seg.length > 1e-4]
+    polyConnectX = [seg for seg in polyConnectX if seg.length > 1e-4]
+
     polyConnectY_mesh = pv.merge(polyConnectY)
     polyConnectX_mesh = pv.merge(polyConnectX)
     lattice_nodes = np.asarray(lattice_nodes)
-
+    
     elapsed_str = time.perf_counter() - start_time_str
-    print(f"Execution of Calculating Straight Lines took: {elapsed_str:.4f} seconds")
+
+    for i, seg in enumerate(polyConnectY):
+        mid = (seg.points[0] + seg.points[1]) / 2
+        print(f"i={i}  mid={np.round(mid, 2)}")
+
+    ny = len(geo_linesY)
+
+    def lattice_index(r, c):
+        maxSeg = (len(tip_pts) - 1) * 2
+        k = c // 2
+        if r + k < len(tip_pts) - 1:
+            indexF = (r + k)**2 + r + 3*k + (c % 2)
+        elif r + k <= len(lead_pts) - 2 :
+            cI = (len(tip_pts) - 2) - r
+            if c % 2:
+                cI = (2 * cI) + 1
+            else:
+                cI = 2 * cI
+            k = cI // 2
+            indexF = (r + k)**2 + r + 3*k + (cI % 2) + (maxSeg * (c - cI)//2)
+        else:
+            j = r + (c // 2) - (len(lead_pts) - 1)
+            base = maxSeg * (len(lead_pts) - len(tip_pts) + 2) + (len(tip_pts) - 3) + c
+            indexF = base + j * (maxSeg - 3 - j)
+        
+        return int(indexF)
+
     class Geolines:
         Geo_linesX = geo_linesX
         Geo_linesY = geo_linesY
-    geo_lines_seqX = []
-    geo_lines_seqY = []
-    z_sequences = []
+
     @dataclass
     class ZSequence:
-        StartLineX: bool
-        TipPt: int
-        PolyDatArr: list
+        isX: bool
+        PolLengths: list
         TopCorner: bool
         BotCorner: bool
-
-    for f in range(1, len(tip_pts)+1, 1):
-        x=0
-        geo_lines_seqX = []
-        if f != 1:
-            Corner = False
-            if f == len(tip_pts):
-                Corner = True
-            geo_lines_seqX.append(geo_linesX[VWcount+VCcount-f])
-            while (VWcount-f)-(x*VCcount)+x >= 0:
-                if x%2 == 0:
-                    geo_lines_seqX.append(geo_linesY[(VWcount-f)-(x*VCcount)+x])
-                else:
-                    geo_lines_seqX.append(geo_linesX[(VWcount-f)-(x*VCcount)+x])
-                x+= 1
-            z_sequences.append(ZSequence(StartLineX= True,TipPt= f, PolyDatArr=geo_lines_seqX, TopCorner= Corner, BotCorner= False))
-        x = 0
-        geo_lines_seqY = []
-        if f != len(tip_pts):
-            Corner = False
-            if f == 1:
-                Corner = True
-            geo_lines_seqY.append(geo_linesY[VWcount+f-1])
-            while (VWcount-f)-(x*VCcount)+x >= 0:
-                if x%2 == 0:
-                    geo_lines_seqY.append(geo_linesX[(VWcount+f)-((x+1)*VCcount)+x-1])           
-                else:
-                    geo_lines_seqY.append(geo_linesY[(VWcount+f)-((x+1)*VCcount)+x-1])
-                x+= 1
-            z_sequences.append(ZSequence(StartLineX= False, TipPt= f, PolyDatArr=geo_lines_seqY, TopCorner= False, BotCorner= Corner))
-
-    geo_lines_seqX = []
-    geo_lines_seqY = []
-    for seq in z_sequences:
-        if seq.StartLineX == True:
-            geo_lines_seqX.extend(seq.PolyDatArr)
-        else:
-            geo_lines_seqY.extend(seq.PolyDatArr)
-    
-    geo_lines_seqX = pv.merge(geo_lines_seqX)
-    geo_lines_seqY = pv.merge(geo_lines_seqY)
 
     # ---- Final visualisation — contracted mesh ----
     updateGeo(p, mesh, root_pts, lead_pts, tip_pts, trail_pts,
               junction_points, visEdges, visEd=False, clear=True)
 
-    p.add_mesh(geo_lines_seqY, color="yellow", line_width=7)
-    p.add_mesh(geo_lines_seqX, color="blue", line_width=7)
-
     # ---- Add lattice to viewer ----
+    # def label_segments(p, segments, color="black"):
+    #     midpoints = np.array([(seg.points[0] + seg.points[1]) / 2 for seg in segments])
+    #     labels = [str(i) for i in range(len(segments))]
+    #     p.add_point_labels(midpoints, labels, font_size=8, text_color=color,
+    #                     fill_shape=False, margin=0, always_visible=True)
+
+    # label_segments(p, polyConnectY, color="yellow")
+    # label_segments(p, polyConnectX, color="cyan")
     p.add_points(lattice_nodes, color="cyan", point_size=6, render_points_as_spheres=True)
     p.add_mesh(leadEdge, color="blue", line_width=3)
     p.add_mesh(trailEdge, color="orange", line_width=3)
-    p.add_mesh(polyConnectY_mesh, line_width=3, color="black")
-    p.add_mesh(polyConnectX_mesh, line_width=3, color="gray")
+    p.add_mesh(polyConnectY_mesh, line_width=3, color="yellow")
+    polyConnectArr = []
+    print(len(lead_pts))
+    print(len(tip_pts))
+    print("____________")
+    for x in tqdm(range(0, len(lead_pts)*2 - 3, 1), desc="Calculating X slices: "):
+        for y in range(0, len(tip_pts)-1, 1):
+            polyConnectArr.append(polyConnectX[lattice_index(y, x)])
+    
+    p.add_mesh(pv.merge(polyConnectArr), line_width=10, color="green")
 
-    return z_sequences, Geolines
+    p.add_mesh(polyConnectX_mesh, line_width=3, color="blue")
+
+    return Geolines
