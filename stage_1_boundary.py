@@ -136,7 +136,7 @@ def EdgeSolver(n_origin_shift, n_root, n_lead, n_tip, boundary_dir, points, face
 
     return (root_edges, lead_edges, tip_edges, trail_edges, root_pts, lead_pts, tip_pts, trail_pts, junction_points, leadEdge, trailEdge)
 
-def Resampler(root_pts, tip_pts, lead_pts, trail_pts, root_edges, tip_edges, lead_edges, trail_edges,junction_points, points, size):
+def Resampler(root_pts, tip_pts, lead_pts, trail_pts, root_edges, tip_edges, lead_edges, trail_edges,junction_points, points, size, increase_lattice_stretch):
     root_len = EdgeLength(root_edges, points)
     tip_len = EdgeLength(tip_edges, points)
     lead_len = EdgeLength(lead_edges, points)
@@ -151,6 +151,7 @@ def Resampler(root_pts, tip_pts, lead_pts, trail_pts, root_edges, tip_edges, lea
         VWcount = int(np.ceil(lead_len/size))
     else:
         VWcount = int(np.ceil(trail_len/size))
+    VWcount = int(VWcount // increase_lattice_stretch)
 
     root_pts  = resample_curve_equal(reorder_curve(root_pts, junction_points[3], junction_points[0]), VCcount)
     tip_pts   = resample_curve_equal(reorder_curve(tip_pts, junction_points[1], junction_points[2]), VCcount)
@@ -166,6 +167,7 @@ def updateGeo(p, mesh, root_pts, lead_pts, tip_pts, trail_pts,
     p.add_mesh(mesh, color="red", opacity=0.8)
     if visEd:
         p.add_mesh(visEdges, color="blue", line_width=1)
+    
     p.add_points(root_pts, color="red", point_size=12, render_points_as_spheres=True)
     p.add_points(lead_pts, color="blue", point_size=12, render_points_as_spheres=True)
     p.add_points(tip_pts, color="green", point_size=12, render_points_as_spheres=True)
@@ -175,7 +177,7 @@ def updateGeo(p, mesh, root_pts, lead_pts, tip_pts, trail_pts,
     p.add_points(junction_points[2], color="black", point_size=20, render_points_as_spheres=True)
     p.add_points(junction_points[3], color="white", point_size=20, render_points_as_spheres=True)
 
-def define_boundaries(p, mesh, points, faces, visEdges, n_origin_shift, n_root, n_lead, n_tip, boundary_dir, size):
+def define_boundaries(p, mesh, points, faces, visEdges, n_origin_shift, n_root, n_lead, n_tip, boundary_dir, size, increase_lattice_stretch):
     """Interactive terminal loop. Returns fully solved + resampled boundary data."""
 
     (root_edges, lead_edges, tip_edges, trail_edges, root_pts, lead_pts, tip_pts, trail_pts,
@@ -231,7 +233,7 @@ def define_boundaries(p, mesh, points, faces, visEdges, n_origin_shift, n_root, 
     (root_pts, tip_pts, lead_pts, trail_pts, VWcount, VCcount) = Resampler(
         root_pts, tip_pts, lead_pts, trail_pts,
         root_edges, tip_edges, lead_edges, trail_edges,
-        junction_points, points, size)
+        junction_points, points, size, increase_lattice_stretch)
 
     print(f"Verify count, root vertices: {len(root_pts)}, tip vertices: {len(tip_pts)}")
     print(f"Verify count, lead vertices: {len(lead_pts)}, trail vertices: {len(trail_pts)}")

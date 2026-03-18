@@ -2,6 +2,7 @@ from dataclasses import dataclass
 import numpy as np
 import pyvista as pv
 from scipy.spatial import cKDTree
+from scipy.optimize import minimize_scalar
 from tqdm import tqdm
 import time
 
@@ -14,10 +15,68 @@ def sample_polyline(points, n=200):
     return np.vstack([np.interp(ti, t, points[:, k]) for k in range(3)]).T
 
 def curve_curve_closest_points(curveA, curveB):
+    # --- coarse search ---
     tree = cKDTree(curveB)
     dists, idx = tree.query(curveA)
-    i = np.argmin(dists)
-    return curveA[i], curveB[idx[i]]
+    i_coarse = int(np.argmin(dists))
+    j_coarse = int(idx[i_coarse])
+
+    # --- build arc-length parameterisations over a local window ---
+    def local_window(curve, center, half=3):
+        lo = max(0, center - half)
+        hi = min(len(curve) - 1, center + half)
+        return curve[lo:hi + 1], lo
+
+    segA, loA = local_window(curveA, i_coarse)
+    segB, loB = local_window(curveB, j_coarse)
+
+    def arclen_params(seg):
+        """Return cumulative arc-length t values normalised to [0,1]."""
+        deltas = np.linalg.norm(np.diff(seg, axis=0), axis=1)
+        cum    = np.concatenate([[0.0], np.cumsum(deltas)])
+        total  = cum[-1]
+        return cum / total if total > 0 else cum
+
+    tA = arclen_params(segA)
+    tB = arclen_params(segB)
+
+    def interp_seg(seg, t_nodes, t):
+        """Linearly interpolate a polyline segment at parameter t in [0,1]."""
+        t = np.clip(t, 0.0, 1.0)
+        k = np.searchsorted(t_nodes, t, side='right') - 1
+        k = np.clip(k, 0, len(seg) - 2)
+        dt = t_nodes[k + 1] - t_nodes[k]
+        alpha = (t - t_nodes[k]) / dt if dt > 0 else 0.0
+        return seg[k] + alpha * (seg[k + 1] - seg[k])
+
+    # --- for each t on A, find the closest t on B, then minimise over A ---
+    def dist_at_tA(t):
+        pA = interp_seg(segA, tA, t)
+        # inner minimisation: best t on B for this point on A
+        res = minimize_scalar(
+            lambda s: np.linalg.norm(pA - interp_seg(segB, tB, s)),
+            bounds=(0.0, 1.0), method='bounded',
+            options={'xatol': 1e-7}
+        )
+        return res.fun
+
+    res_outer = minimize_scalar(
+        dist_at_tA,
+        bounds=(0.0, 1.0), method='bounded',
+        options={'xatol': 1e-7}
+    )
+
+    t_best_A = res_outer.x
+    pA_best  = interp_seg(segA, tA, t_best_A)
+
+    res_inner = minimize_scalar(
+        lambda s: np.linalg.norm(pA_best - interp_seg(segB, tB, s)),
+        bounds=(0.0, 1.0), method='bounded',
+        options={'xatol': 1e-7}
+    )
+    pB_best = interp_seg(segB, tB, res_inner.x)
+
+    return pA_best, pB_best
 
 def collect_lattice_segments_along_geodesic(geodesic, opposing_geodesics, samples=300):
     g_s = sample_polyline(geodesic.points, samples)
@@ -92,12 +151,6 @@ def build_lattice(p, mesh, mesh_extended, geo_linesX, geo_linesY, root_pts, lead
     
     elapsed_str = time.perf_counter() - start_time_str
 
-    for i, seg in enumerate(polyConnectY):
-        mid = (seg.points[0] + seg.points[1]) / 2
-        print(f"i={i}  mid={np.round(mid, 2)}")
-
-    ny = len(geo_linesY)
-
     def lattice_index(r, c):
         maxSeg = (len(tip_pts) - 1) * 2
         k = c // 2
@@ -123,11 +176,10 @@ def build_lattice(p, mesh, mesh_extended, geo_linesX, geo_linesY, root_pts, lead
         Geo_linesY = geo_linesY
 
     @dataclass
-    class ZSequence:
-        isX: bool
+    class SlicedLenghts:
+        isforward:bool
         PolLengths: list
-        TopCorner: bool
-        BotCorner: bool
+
 
     # ---- Final visualisation — contracted mesh ----
     updateGeo(p, mesh, root_pts, lead_pts, tip_pts, trail_pts,
@@ -150,12 +202,30 @@ def build_lattice(p, mesh, mesh_extended, geo_linesX, geo_linesY, root_pts, lead
     print(len(lead_pts))
     print(len(tip_pts))
     print("____________")
-    for x in tqdm(range(0, len(lead_pts)*2 - 3, 1), desc="Calculating X slices: "):
+    slicesX = []
+    for x in tqdm(range(0, len(lead_pts)*2 - 2, 1), desc="Calculating X slices: "):
+        sliceArray = []
         for y in range(0, len(tip_pts)-1, 1):
-            polyConnectArr.append(polyConnectX[lattice_index(y, x)])
+            sliceArray.append(polyConnectX[lattice_index(y, x)])
+            if x % 2 == 0:
+                isforward = False
+            else:
+                isforward = True
+        slicesX.append(SlicedLenghts(PolLengths=sliceArray, isforward=isforward))
+
+    slicesY = []
+    for x in tqdm(range(0, len(lead_pts)*2 - 2, 1), desc="Calculating Y slices: "):
+        sliceArray = []
+        for y in range(0, len(tip_pts)-1, 1):
+            sliceArray.append(polyConnectY[lattice_index(y, x)])
+            if x % 2 == 0:
+                isforward = False
+            else:
+                isforward = True
+        sliceArray.reverse()
+        slicesY.append(SlicedLenghts(PolLengths=(sliceArray), isforward=isforward))
     
-    p.add_mesh(pv.merge(polyConnectArr), line_width=10, color="green")
 
     p.add_mesh(polyConnectX_mesh, line_width=3, color="blue")
 
-    return Geolines
+    return Geolines, slicesY, slicesX, lattice_nodes
