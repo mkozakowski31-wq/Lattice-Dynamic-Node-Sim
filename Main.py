@@ -11,7 +11,7 @@ from stage_4_deformation import DeformedMesh
 obj_path_contract = "Models/LatticeTestbenchPYplotTaper.obj"
 obj_path_extended = "Models/ScaledLatticeTestbenchPYplotTaper2.obj"
 
-# ---- Parameters ----
+# ---- Parameters ----s
 boundary_dir   = 1
 n_origin_shift = -102
 n_root         = 103
