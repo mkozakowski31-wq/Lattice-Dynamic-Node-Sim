@@ -165,15 +165,16 @@ def build_lattice(p, mesh, mesh_extended, geo_linesX, geo_linesY, root_pts, lead
             k = cI // 2
             indexF = (r + k)**2 + r + 3*k + (cI % 2) + (maxSeg * (c - cI)//2)
         else:
-            j = r + (c // 2) - (len(lead_pts) - 1)
-            base = maxSeg * (len(lead_pts) - len(tip_pts) + 2) + (len(tip_pts) - 3) + c
-            indexF = base + j * (maxSeg - 3 - j)
+            newR = len(lead_pts) - 2 - k
+            initial_index = lattice_index(newR,c) + 2*(maxSeg-1)
+            firstDif = 2*(len(tip_pts)-3)
+            for i in range((r-newR-1)):
+                initial_index += firstDif
+                firstDif -= 2
+
+            indexF = initial_index
         
         return int(indexF)
-
-    class Geolines:
-        Geo_linesX = geo_linesX
-        Geo_linesY = geo_linesY
 
     @dataclass
     class SlicedLenghts:
@@ -201,12 +202,12 @@ def build_lattice(p, mesh, mesh_extended, geo_linesX, geo_linesY, root_pts, lead
     polyConnectArr = []
     print(len(lead_pts))
     print(len(tip_pts))
-    print("____________")
     slicesX = []
     for x in tqdm(range(0, len(lead_pts)*2 - 2, 1), desc="Calculating X slices: "):
         sliceArray = []
         for y in range(0, len(tip_pts)-1, 1):
-            sliceArray.append(polyConnectX[lattice_index(y, x)])
+            polyC = lattice_index(y, x)
+            sliceArray.append(polyConnectX[polyC])
             if x % 2 == 0:
                 isforward = False
             else:
@@ -228,4 +229,4 @@ def build_lattice(p, mesh, mesh_extended, geo_linesX, geo_linesY, root_pts, lead
 
     p.add_mesh(polyConnectX_mesh, line_width=3, color="blue")
 
-    return Geolines, slicesY, slicesX, lattice_nodes
+    return slicesY, slicesX, lattice_nodes
