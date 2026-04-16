@@ -1,7 +1,48 @@
+import os
 import numpy as np
 import pyvista as pv
-from dataclasses import dataclass
 from collections import Counter
+from session_io import load_session, list_sessions
+
+
+def get_origin_vertex_index(obj_path):
+    """
+    Parses an OBJ file and returns the index (0-based) of the vertex
+    that belongs to the group 'origin'.
+    """
+    current_group = None
+    vertex_index = 0
+
+    with open(obj_path, 'r') as f:
+        for line in f:
+            line = line.strip()
+
+            if line.startswith('g '):
+                current_group = line.split(maxsplit=1)[1]
+
+            elif line.startswith('v '):
+                if current_group == 'origin':
+                    print(f"vertex_index: {vertex_index}")
+                    return vertex_index
+                vertex_index += 1
+
+    raise ValueError("No vertex found in group 'origin'")
+
+def get_origin_coords(obj_path):
+    """
+    Returns the 3D coordinates of the vertex in group 'origin'.
+    Coordinates are stable across mesh cleaning — indices are not.
+    """
+    current_group = None
+    with open(obj_path, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith('g '):
+                current_group = line.split(maxsplit=1)[1]
+            elif line.startswith('v ') and current_group == 'origin':
+                coords = list(map(float, line.split()[1:]))
+                return np.array(coords)
+    raise ValueError("No vertex found in group 'origin'")
 
 
 def load_meshes(obj_path_contract, obj_path_extended):
@@ -23,14 +64,16 @@ def load_meshes(obj_path_contract, obj_path_extended):
         boundary_edges=True, non_manifold_edges=False,
         feature_edges=False, manifold_edges=False
     )
+    origin = get_origin_coords(obj_path_contract)
+    return mesh, mesh_extended, points, faces, points_ex, faces_ex, visEdges, origin
 
-    return mesh, mesh_extended, points, faces, points_ex, faces_ex, visEdges
 
 def EdgeLength(edges, points):
     edges = np.asarray(edges)
     p0 = points[edges[:, 0]]
     p1 = points[edges[:, 1]]
     return np.linalg.norm(p1 - p0, axis=1).sum()
+
 
 def reorder_curve(points, pointA, pointB):
     points = np.asarray(points)
@@ -40,6 +83,7 @@ def reorder_curve(points, pointA, pointB):
     direction /= np.linalg.norm(direction)
     projections = np.dot(points - pointA, direction)
     return points[np.argsort(projections)]
+
 
 def resample_curve_equal(points, N):
     points = np.asarray(points)
@@ -53,7 +97,7 @@ def resample_curve_equal(points, N):
     target_s = np.linspace(0.0, total_len, N)
     cum_len = np.concatenate([[0.0], np.cumsum(lens)])
     out = np.zeros((N, 3))
-    seg_idx  = 0
+    seg_idx = 0
     for i, s in enumerate(target_s):
         while seg_idx < len(lens) - 1 and cum_len[seg_idx + 1] < s:
             seg_idx += 1
@@ -61,11 +105,12 @@ def resample_curve_equal(points, N):
         if seg_len == 0:
             out[i] = points[seg_idx]
         else:
-            t      = (s - cum_len[seg_idx]) / seg_len
+            t = (s - cum_len[seg_idx]) / seg_len
             out[i] = points[seg_idx] + t * segs[seg_idx]
     return out
 
-def EdgeSolver(n_origin_shift, n_root, n_lead, n_tip, boundary_dir, points, faces):
+
+def EdgeSolver(n_origin_shift, n_root, n_lead, n_tip, boundary_dir, points, faces, based_on_extrema, origin):
     edges = []
     for a, b, c in faces:
         edges.append(tuple(sorted((a, b))))
@@ -77,15 +122,21 @@ def EdgeSolver(n_origin_shift, n_root, n_lead, n_tip, boundary_dir, points, face
     boundary_edges = np.array(boundary_edges)
     boundary_vertices = np.unique(boundary_edges.flatten())
 
-    print("Boundary edges:",len(boundary_edges))
-    print("Boundary vertices:",len(boundary_vertices))
+    print("Boundary edges:", len(boundary_edges))
+    print("Boundary vertices:", len(boundary_vertices))
 
     adj = {}
     for a, b in boundary_edges:
         adj.setdefault(a, []).append(b)
         adj.setdefault(b, []).append(a)
-
-    start = min(boundary_vertices, key=lambda i: points[i, 0])
+    
+    if based_on_extrema == True:
+        start = min(boundary_vertices, key=lambda i: points[i, 0])
+    else:
+        bv_coords = points[boundary_vertices]
+        dists     = np.linalg.norm(bv_coords - origin, axis=1)
+        start     = boundary_vertices[np.argmin(dists)]
+    print(f"start: {str(start)}")
     ordered_vertices = [start]
     prev, current = None, start
 
@@ -105,7 +156,10 @@ def EdgeSolver(n_origin_shift, n_root, n_lead, n_tip, boundary_dir, points, face
     shift = n_origin_shift % len(ordered_vertices)
     ordered_vertices = np.roll(ordered_vertices, -shift)
 
-    ordered_edges = [(ordered_vertices[i], ordered_vertices[(i + 1) % len(ordered_vertices)])for i in range(len(ordered_vertices))]
+    ordered_edges = [
+        (ordered_vertices[i], ordered_vertices[(i + 1) % len(ordered_vertices)])
+        for i in range(len(ordered_vertices))
+    ]
 
     print("Ordered boundary vertices:", len(ordered_vertices))
 
@@ -114,17 +168,17 @@ def EdgeSolver(n_origin_shift, n_root, n_lead, n_tip, boundary_dir, points, face
     if n_trail <= 0:
         raise ValueError("Segment sizes exceed boundary length")
 
-    root_edges = ordered_edges[0:n_root]
-    lead_edges = ordered_edges[n_root:n_root + n_lead]
-    tip_edges = ordered_edges[n_root + n_lead:n_root + n_lead + n_tip]
+    root_edges  = ordered_edges[0:n_root]
+    lead_edges  = ordered_edges[n_root:n_root + n_lead]
+    tip_edges   = ordered_edges[n_root + n_lead:n_root + n_lead + n_tip]
     trail_edges = ordered_edges[n_root + n_lead + n_tip:]
 
-    root_pts = points[np.unique(np.array(root_edges).flatten())]
-    lead_pts = points[np.unique(np.array(lead_edges).flatten())]
-    tip_pts = points[np.unique(np.array(tip_edges).flatten())]
+    root_pts  = points[np.unique(np.array(root_edges).flatten())]
+    lead_pts  = points[np.unique(np.array(lead_edges).flatten())]
+    tip_pts   = points[np.unique(np.array(tip_edges).flatten())]
     trail_pts = points[np.unique(np.array(trail_edges).flatten())]
 
-    leadEdge = pv.lines_from_points(lead_pts)
+    leadEdge  = pv.lines_from_points(lead_pts)
     trailEdge = pv.lines_from_points(trail_pts)
 
     L_R = ordered_vertices[n_root]
@@ -134,31 +188,34 @@ def EdgeSolver(n_origin_shift, n_root, n_lead, n_tip, boundary_dir, points, face
 
     junction_points = points[np.array([L_R, L_T, T_T, T_R])]
 
-    return (root_edges, lead_edges, tip_edges, trail_edges, root_pts, lead_pts, tip_pts, trail_pts, junction_points, leadEdge, trailEdge)
+    return (root_edges, lead_edges, tip_edges, trail_edges,
+            root_pts, lead_pts, tip_pts, trail_pts,
+            junction_points, leadEdge, trailEdge)
 
-def Resampler(root_pts, tip_pts, lead_pts, trail_pts, root_edges, tip_edges, lead_edges, trail_edges,junction_points, points, size, increase_lattice_stretch):
-    root_len = EdgeLength(root_edges, points)
-    tip_len = EdgeLength(tip_edges, points)
-    lead_len = EdgeLength(lead_edges, points)
+
+def Resampler(root_pts, tip_pts, lead_pts, trail_pts,
+              root_edges, tip_edges, lead_edges, trail_edges,
+              junction_points, points, size, increase_lattice_stretch):
+    root_len  = EdgeLength(root_edges,  points)
+    tip_len   = EdgeLength(tip_edges,   points)
+    lead_len  = EdgeLength(lead_edges,  points)
     trail_len = EdgeLength(trail_edges, points)
 
-    if root_len >= tip_len:
-        VCcount = int(np.ceil(root_len/size))
-    else:
-        VCcount = int(np.ceil(root_len/size))
+    VCcount = int(np.ceil(root_len / size))
 
     if lead_len >= trail_len:
-        VWcount = int(np.ceil(lead_len/size))
+        VWcount = int(np.ceil(lead_len / size))
     else:
-        VWcount = int(np.ceil(trail_len/size))
+        VWcount = int(np.ceil(trail_len / size))
     VWcount = int(VWcount // increase_lattice_stretch)
 
-    root_pts  = resample_curve_equal(reorder_curve(root_pts, junction_points[3], junction_points[0]), VCcount)
-    tip_pts   = resample_curve_equal(reorder_curve(tip_pts, junction_points[1], junction_points[2]), VCcount)
-    lead_pts  = resample_curve_equal(reorder_curve(lead_pts, junction_points[0], junction_points[1]), VWcount)
+    root_pts  = resample_curve_equal(reorder_curve(root_pts,  junction_points[3], junction_points[0]), VCcount)
+    tip_pts   = resample_curve_equal(reorder_curve(tip_pts,   junction_points[1], junction_points[2]), VCcount)
+    lead_pts  = resample_curve_equal(reorder_curve(lead_pts,  junction_points[0], junction_points[1]), VWcount)
     trail_pts = resample_curve_equal(reorder_curve(trail_pts, junction_points[2], junction_points[3]), VWcount)
 
     return root_pts, tip_pts, lead_pts, trail_pts, VWcount, VCcount
+
 
 def updateGeo(p, mesh, root_pts, lead_pts, tip_pts, trail_pts,
               junction_points, visEdges, visEd, clear):
@@ -167,21 +224,30 @@ def updateGeo(p, mesh, root_pts, lead_pts, tip_pts, trail_pts,
     p.add_mesh(mesh, color="red", opacity=0.8)
     if visEd:
         p.add_mesh(visEdges, color="blue", line_width=1)
-    
-    p.add_points(root_pts, color="red", point_size=12, render_points_as_spheres=True)
-    p.add_points(lead_pts, color="blue", point_size=12, render_points_as_spheres=True)
-    p.add_points(tip_pts, color="green", point_size=12, render_points_as_spheres=True)
+    p.add_points(root_pts,  color="red",    point_size=12, render_points_as_spheres=True)
+    p.add_points(lead_pts,  color="blue",   point_size=12, render_points_as_spheres=True)
+    p.add_points(tip_pts,   color="green",  point_size=12, render_points_as_spheres=True)
     p.add_points(trail_pts, color="orange", point_size=12, render_points_as_spheres=True)
     p.add_points(junction_points[0], color="pink",  point_size=20, render_points_as_spheres=True)
     p.add_points(junction_points[1], color="teal",  point_size=20, render_points_as_spheres=True)
     p.add_points(junction_points[2], color="black", point_size=20, render_points_as_spheres=True)
     p.add_points(junction_points[3], color="white", point_size=20, render_points_as_spheres=True)
 
-def define_boundaries(p, mesh, points, faces, visEdges, n_origin_shift, n_root, n_lead, n_tip, boundary_dir, size, increase_lattice_stretch):
-    """Interactive terminal loop. Returns fully solved + resampled boundary data."""
 
-    (root_edges, lead_edges, tip_edges, trail_edges, root_pts, lead_pts, tip_pts, trail_pts,
-     junction_points, leadEdge, trailEdge) = EdgeSolver(n_origin_shift, n_root, n_lead, n_tip, boundary_dir, points, faces)
+def define_boundaries(p, mesh, points, faces, origin, visEdges,
+                      n_origin_shift, n_root, n_lead, n_tip,
+                      boundary_dir, size, increase_lattice_stretch, based_on_extrema):
+
+    # Full-session payload — populated only when the user runs 'load'
+    _loaded         = False
+    _slicesY        = None
+    _slicesX        = None
+    _lattice_nodes  = None
+
+    (root_edges, lead_edges, tip_edges, trail_edges,
+     root_pts, lead_pts, tip_pts, trail_pts,
+     junction_points, leadEdge, trailEdge) = EdgeSolver(
+        n_origin_shift, n_root, n_lead, n_tip, boundary_dir, points, faces, based_on_extrema, origin)
 
     updateGeo(p, mesh, root_pts, lead_pts, tip_pts, trail_pts,
               junction_points, visEdges, visEd=True, clear=True)
@@ -190,20 +256,84 @@ def define_boundaries(p, mesh, points, faces, visEdges, n_origin_shift, n_root, 
         print("\nAdjust edge parameters:")
         print(f"shift={n_origin_shift}, root={n_root}, lead={n_lead}, "
               f"tip={n_tip}, boundary direction={boundary_dir}")
+        if _loaded:
+            print("  [full session loaded — 'continue' will skip geodesics & lattice]")
 
-        cmd = input("Enter: shift root lead tip boundary  OR  'continue'  OR  'help'  OR  'latticesize'\n> ").strip()
+        cmd = input(
+            "Enter: shift root lead tip boundary  |  'continue'  |  "
+            "'load'  |  'latticesize'  |  'help'\n> "
+        ).strip()
 
+        # ── continue ──────────────────────────────────────────────────────
         if cmd.lower() == "continue":
             break
 
+        # ── load full session ─────────────────────────────────────────────
+        elif cmd.lower() == "load":
+            saved = list_sessions()
+            if saved:
+                print("\nAvailable sessions:")
+                for i, f in enumerate(saved):
+                    print(f"  [{i}] {f}")
+                shortcut = input(
+                    "Enter a list index to pick one, or type a full path: "
+                ).strip()
+                path = (saved[int(shortcut)]
+                        if shortcut.isdigit() and int(shortcut) < len(saved)
+                        else shortcut)
+            else:
+                print("No sessions found in sessions/ folder.")
+                path = input("Enter full path to a .pkl session file: ").strip()
+
+            if not path:
+                print("Load cancelled.")
+                continue
+            if not os.path.isfile(path):
+                print(f"File not found: {path}")
+                continue
+
+            try:
+                sess = load_session(path)
+
+                # Store full lattice payload
+                _slicesY       = sess["slicesY"]
+                _slicesX       = sess["slicesX"]
+                _lattice_nodes = sess["lattice_nodes"]
+
+                # Restore boundary params so the viewer reflects the session
+                n_origin_shift = sess["n_origin_shift"]
+                n_root         = sess["n_root"]
+                n_lead         = sess["n_lead"]
+                n_tip          = sess["n_tip"]
+                boundary_dir   = sess["boundary_dir"]
+                _loaded        = True
+
+                print(f"  → shift={n_origin_shift}, root={n_root}, lead={n_lead}, "
+                      f"tip={n_tip}, dir={boundary_dir}  (VCcount={sess['VCcount']})")
+
+                (root_edges, lead_edges, tip_edges, trail_edges,
+                 root_pts, lead_pts, tip_pts, trail_pts,
+                 junction_points, leadEdge, trailEdge) = EdgeSolver(
+                    n_origin_shift, n_root, n_lead, n_tip,
+                    boundary_dir, points, faces, based_on_extrema, origin)
+
+                updateGeo(p, mesh, root_pts, lead_pts, tip_pts, trail_pts,
+                          junction_points, visEdges, visEd=True, clear=True)
+
+            except Exception as exc:
+                print(f"Failed to load session: {exc}")
+
+        # ── help ──────────────────────────────────────────────────────────
         elif cmd.lower() == "help":
             print("")
             print("Each index defines the number of vertices in each boundary edge")
             print("Adjust boundary direction (Counter vs. Clockwise) with 1 or -1")
             print("Root=Red, Lead=Blue, Tip=Green, Trail=Orange")
             print("Corners: Root_Lead=Pink, Lead_Tip=Teal, Tip_Trail=Black, Trail_Root=White")
+            print("'load'  — restore a full saved session (skips geodesics & lattice on 'continue')")
             input("Press a key to return")
 
+        # ── latticesize ───────────────────────────────────────────────────
         elif cmd.lower() == "latticesize":
             print("WARNING: Entering a lattice size too large may result in error")
             while True:
@@ -215,7 +345,12 @@ def define_boundaries(p, mesh, points, faces, visEdges, n_origin_shift, n_root, 
                     break
                 except:
                     print("Not a float, try again.")
+
+        # ── manual parameter entry ────────────────────────────────────────
         else:
+            # Any manual edit invalidates a previously loaded session
+            _loaded = False
+            _slicesY = _slicesX = _lattice_nodes = None
             try:
                 n_origin_shift, n_root, n_lead, n_tip, boundary_dir = map(int, cmd.split())
             except ValueError:
@@ -225,7 +360,7 @@ def define_boundaries(p, mesh, points, faces, visEdges, n_origin_shift, n_root, 
             (root_edges, lead_edges, tip_edges, trail_edges,
              root_pts, lead_pts, tip_pts, trail_pts,
              junction_points, leadEdge, trailEdge) = EdgeSolver(
-                n_origin_shift, n_root, n_lead, n_tip, boundary_dir, points, faces)
+                n_origin_shift, n_root, n_lead, n_tip, boundary_dir, points, faces, based_on_extrema, origin)
 
             updateGeo(p, mesh, root_pts, lead_pts, tip_pts, trail_pts,
                       junction_points, visEdges, visEd=True, clear=True)
@@ -238,7 +373,9 @@ def define_boundaries(p, mesh, points, faces, visEdges, n_origin_shift, n_root, 
     print(f"Verify count, root vertices: {len(root_pts)}, tip vertices: {len(tip_pts)}")
     print(f"Verify count, lead vertices: {len(lead_pts)}, trail vertices: {len(trail_pts)}")
 
-    return (root_edges, lead_edges, tip_edges, trail_edges, root_pts, lead_pts, tip_pts, trail_pts,junction_points,
-            leadEdge, trailEdge, VWcount, VCcount, n_origin_shift, n_root, n_lead, n_tip, boundary_dir, size)
-
-
+    return (root_edges, lead_edges, tip_edges, trail_edges,
+            root_pts, lead_pts, tip_pts, trail_pts,
+            junction_points, leadEdge, trailEdge,
+            VWcount, VCcount,
+            n_origin_shift, n_root, n_lead, n_tip, boundary_dir, size,
+            _loaded, _slicesY, _slicesX, _lattice_nodes)

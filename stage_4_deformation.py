@@ -4,11 +4,9 @@ from pyvistaqt import BackgroundPlotter
 from tqdm import tqdm
 from typing import Optional
 from joblib import Parallel, delayed
-
 import vtk
 
-from stage_1_boundary import EdgeSolver, resample_curve_equal, reorder_curve
-from stage_3_lattice import collect_lattice_segments_along_geodesic, segment_lengths
+from stage_1_boundary import EdgeSolver, resample_curve_equal, reorder_curve, get_origin_vertex_index
 
 def find_triangulation_point(center1, center2, r1, r2, semi_dir, mesh_pts, mesh_faces, tol=1e-5, debug=False):
     c1 = np.asarray(center1, float)
@@ -43,11 +41,9 @@ def find_triangulation_point(center1, center2, r1, r2, semi_dir, mesh_pts, mesh_
         d1 = np.dot(v1 - circle_center, u)
         d2 = np.dot(v2 - circle_center, u)
 
-        edges = [
-            (v0, v1, d0, d1),
-            (v1, v2, d1, d2),
-            (v2, v0, d2, d0),
-        ]
+        edges = [(v0, v1, d0, d1),
+                (v1, v2, d1, d2),
+                (v2, v0, d2, d0),]
 
         seg_pts = []
         for p0, p1, s0, s1 in edges:
@@ -87,7 +83,6 @@ def find_triangulation_point(center1, center2, r1, r2, semi_dir, mesh_pts, mesh_
     best = np.argmin(np.linalg.norm(candidates - expected, axis=1))
     return candidates[best]
 
-
 def trianglationLengthEdge(cPt1, Length, edge_pts, Dir):
     tol = Length * 0.1
     dists = np.linalg.norm(edge_pts - cPt1, axis=1)
@@ -126,30 +121,28 @@ def _compute_point_edge(i, intersect_ptsP, polyLenX, polyLenY, mesh_pts, mesh_fa
         p2 = trianglationLengthEdge(intersect_ptsP[-1], polyLenX[-1], trail_pts, direction)
         return [p1, p2]
     else:
-        p = find_triangulation_point(intersect_ptsP[i + 1], intersect_ptsP[i], polyLenY[i], polyLenX[i], direction, mesh_pts, mesh_faces)
+        p = find_triangulation_point(intersect_ptsP[i + 1], intersect_ptsP[i], polyLenY[i+1], polyLenX[i], direction, mesh_pts, mesh_faces)
         return [p]
 
 def _compute_point_normal(i, intersect_ptsP, polyLenX, polyLenY, mesh_pts, mesh_faces, direction):
     p = find_triangulation_point(intersect_ptsP[i + 1], intersect_ptsP[i], polyLenY[i], polyLenX[i], direction, mesh_pts, mesh_faces)
     return [p]
 
-
-# ---------------------------------------------------------------------------
-
 class DeformedMesh:
-    def __init__(self, mesh_path, n_origin_shift, n_root, n_lead, n_tip, boundary_dir, VCcount):
+    def __init__(self, mesh_path, n_origin_shift, n_root, n_lead, n_tip, boundary_dir, VCcount, based_on_extrema):
         self.mesh = pv.read(mesh_path)
         self.mesh = self.mesh.clean(tolerance=1e-6)
         self.mesh.compute_normals(inplace=True)
 
         points = self.mesh.points
         faces  = self.mesh.faces.reshape(-1, 4)[:, 1:]
+        origin = get_origin_vertex_index(mesh_path)
 
         (root_edges, lead_edges, tip_edges, trail_edges,
          root_pts, lead_pts, tip_pts, trail_pts,
          junction_points, leadEdge, trailEdge) = EdgeSolver(
             n_origin_shift, n_root, n_lead, n_tip,
-            boundary_dir, points, faces)
+            boundary_dir, points, faces, based_on_extrema, origin)
 
         self.tip_pts   = resample_curve_equal(reorder_curve(tip_pts,  junction_points[1], junction_points[2]), VCcount)
         self.root_pts  = resample_curve_equal(reorder_curve(root_pts, junction_points[3], junction_points[0]), VCcount)
@@ -166,7 +159,7 @@ class DeformedMesh:
         self._locator.SetDataSet(self.mesh)
         self._locator.BuildLocator()
 
-    def Z_SegTopographicalDeformation(self, p, Geolines, slicesY, slicesX):
+    def Z_SegTopographicalDeformation(self, p, slicesY, slicesX):
         def SliceLengths(idx):
             polyLenX = []
             polyLenY = []
@@ -221,8 +214,8 @@ class DeformedMesh:
             intersect_pts.extend(intersect_ptsC)
             intersect_ptsP = intersect_ptsC
 
-        p.add_mesh(pv.Sphere(radius=(slicesX[-6].PolLengths[2].compute_arc_length())['arc_length'][-1], center=intersect_pts[44],theta_resolution=100, phi_resolution=100),style='wireframe', color="green")
-        p.add_mesh(pv.Sphere(radius=(slicesY[-6].PolLengths[3].compute_arc_length())['arc_length'][-1], center=intersect_pts[45],theta_resolution=100, phi_resolution=100),style='wireframe', color="green")
+        # p.add_mesh(pv.Sphere(radius=(slicesX[-6].PolLengths[2].compute_arc_length())['arc_length'][-1], center=intersect_pts[44],theta_resolution=100, phi_resolution=100),style='wireframe', color="green")
+        # p.add_mesh(pv.Sphere(radius=(slicesY[-6].PolLengths[3].compute_arc_length())['arc_length'][-1], center=intersect_pts[45],theta_resolution=100, phi_resolution=100),style='wireframe', color="green")
 
         return np.array(intersect_pts)
 
