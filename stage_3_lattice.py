@@ -6,11 +6,10 @@ from scipy.optimize import minimize_scalar
 from tqdm import tqdm
 import time
 
-from stage_1_boundary import (EdgeSolver, resample_curve_equal, reorder_curve, updateGeo)
-
+from stage_1_boundary import updateGeo
 
 def sample_polyline(points, n=200):
-    t  = np.linspace(0, 1, len(points))
+    t = np.linspace(0, 1, len(points))
     ti = np.linspace(0, 1, n)
     return np.vstack([np.interp(ti, t, points[:, k]) for k in range(3)]).T
 
@@ -33,8 +32,8 @@ def curve_curve_closest_points(curveA, curveB):
     def arclen_params(seg):
         """Return cumulative arc-length t values normalised to [0,1]."""
         deltas = np.linalg.norm(np.diff(seg, axis=0), axis=1)
-        cum    = np.concatenate([[0.0], np.cumsum(deltas)])
-        total  = cum[-1]
+        cum = np.concatenate([[0.0], np.cumsum(deltas)])
+        total = cum[-1]
         return cum / total if total > 0 else cum
 
     tA = arclen_params(segA)
@@ -67,7 +66,7 @@ def curve_curve_closest_points(curveA, curveB):
     )
 
     t_best_A = res_outer.x
-    pA_best  = interp_seg(segA, tA, t_best_A)
+    pA_best = interp_seg(segA, tA, t_best_A)
 
     res_inner = minimize_scalar(
         lambda s: np.linalg.norm(pA_best - interp_seg(segB, tB, s)),
@@ -88,9 +87,9 @@ def collect_lattice_segments_along_geodesic(geodesic, opposing_geodesics, sample
         intersection_points.append(pA)
 
     intersection_points = np.asarray(intersection_points)
-    tree   = cKDTree(g_s)
+    tree = cKDTree(g_s)
     _, idx = tree.query(intersection_points)
-    order  = np.argsort(idx)
+    order = np.argsort(idx)
     ordered_points = intersection_points[order]
 
     segments = []
@@ -218,7 +217,11 @@ def build_lattice(p, mesh, mesh_extended, geo_linesX, geo_linesY, root_pts, lead
     for x in tqdm(range(0, len(lead_pts)*2 - 2, 1), desc="Calculating Y slices: "):
         sliceArray = []
         for y in range(0, len(tip_pts)-1, 1):
-            sliceArray.append(polyConnectY[lattice_index(y, x)])
+            li = lattice_index(y, x)
+            # print(f"x: {str(x)}")
+            # print(f"y: {str(y)}")
+            # print(f"lattice index: {str(li)}")
+            sliceArray.append(polyConnectY[li])
             if x % 2 == 0:
                 isforward = False
             else:
