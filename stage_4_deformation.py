@@ -1,12 +1,10 @@
 import numpy as np
 import pyvista as pv
-from pyvistaqt import BackgroundPlotter
 from tqdm import tqdm
-from typing import Optional
 from joblib import Parallel, delayed
 import vtk
 
-from stage_1_boundary import EdgeSolver, resample_curve_equal, reorder_curve, get_origin_vertex_index
+from stage_1_boundary import EdgeSolver, resample_curve_equal, reorder_curve, get_origin_coords
 
 def find_triangulation_point(center1, center2, r1, r2, semi_dir, mesh_pts, mesh_faces, tol=1e-5, debug=False):
     c1 = np.asarray(center1, float)
@@ -135,8 +133,8 @@ class DeformedMesh:
         self.mesh.compute_normals(inplace=True)
 
         points = self.mesh.points
-        faces  = self.mesh.faces.reshape(-1, 4)[:, 1:]
-        origin = get_origin_vertex_index(mesh_path)
+        faces = self.mesh.faces.reshape(-1, 4)[:, 1:]
+        origin = get_origin_coords(mesh_path)
 
         (root_edges, lead_edges, tip_edges, trail_edges,
          root_pts, lead_pts, tip_pts, trail_pts,
@@ -144,16 +142,16 @@ class DeformedMesh:
             n_origin_shift, n_root, n_lead, n_tip,
             boundary_dir, points, faces, based_on_extrema, origin)
 
-        self.tip_pts   = resample_curve_equal(reorder_curve(tip_pts,  junction_points[1], junction_points[2]), VCcount)
-        self.root_pts  = resample_curve_equal(reorder_curve(root_pts, junction_points[3], junction_points[0]), VCcount)
-        self.leadEdge  = pv.lines_from_points(lead_pts)
+        self.tip_pts = resample_curve_equal(reorder_curve(tip_pts,  junction_points[1], junction_points[2]), VCcount)
+        self.root_pts = resample_curve_equal(reorder_curve(root_pts, junction_points[3], junction_points[0]), VCcount)
+        self.leadEdge = pv.lines_from_points(lead_pts)
         self.trailEdge = pv.lines_from_points(trail_pts)
-        self.corners   = junction_points
+        self.corners = junction_points
 
-        self._mesh_pts   = np.array(self.mesh.points)
+        self._mesh_pts = np.array(self.mesh.points)
         self._mesh_faces = self.mesh.faces.reshape(-1, 4)[:, 1:].copy()
-        self._lead_pts   = np.array(self.leadEdge.points)
-        self._trail_pts  = np.array(self.trailEdge.points)
+        self._lead_pts = np.array(self.leadEdge.points)
+        self._trail_pts = np.array(self.trailEdge.points)
 
         self._locator = vtk.vtkStaticCellLocator()
         self._locator.SetDataSet(self.mesh)
@@ -174,17 +172,12 @@ class DeformedMesh:
         direction = self.corners[0] - self.corners[1]
         direction = direction / np.linalg.norm(direction)
 
-        # p.add_points(self.tip_pts[1], color="purple", point_size=25, render_points_as_spheres=True)
-        # p.add_points(self.tip_pts[0], color="green",  point_size=25, render_points_as_spheres=True)
-        p.add_mesh(slicesY[-6].PolLengths[3], line_width=12, color="purple")
-        p.add_mesh(slicesX[-6].PolLengths[2], line_width=12, color="green")
-
-        mesh_pts   = self._mesh_pts
+        mesh_pts = self._mesh_pts
         mesh_faces = self._mesh_faces
-        lead_pts   = self._lead_pts
-        trail_pts  = self._trail_pts
+        lead_pts = self._lead_pts
+        trail_pts = self._trail_pts
 
-        intersect_pts  = []
+        intersect_pts = []
         intersect_ptsP = self.tip_pts
 
         isEdge = False
@@ -214,9 +207,6 @@ class DeformedMesh:
             intersect_pts.extend(intersect_ptsC)
             intersect_ptsP = intersect_ptsC
 
-        # p.add_mesh(pv.Sphere(radius=(slicesX[-6].PolLengths[2].compute_arc_length())['arc_length'][-1], center=intersect_pts[44],theta_resolution=100, phi_resolution=100),style='wireframe', color="green")
-        # p.add_mesh(pv.Sphere(radius=(slicesY[-6].PolLengths[3].compute_arc_length())['arc_length'][-1], center=intersect_pts[45],theta_resolution=100, phi_resolution=100),style='wireframe', color="green")
-
         return np.array(intersect_pts)
 
     def sphereCheck(self, p, slicesY, slicesX):
@@ -231,7 +221,7 @@ class DeformedMesh:
                 polyLenY.append(arc['arc_length'][-1])
             return polyLenX, polyLenY
 
-        spheres  = []
+        spheres = []
         spheres2 = []
         polyLenX, polyLenY = SliceLengths(-1)
 
@@ -239,5 +229,6 @@ class DeformedMesh:
             spheres.append(pv.Sphere(radius=polyLenX[i], center=self.tip_pts[i],theta_resolution=100, phi_resolution=100))
             spheres2.append(pv.Sphere(radius=polyLenY[i], center=self.tip_pts[i],theta_resolution=100, phi_resolution=100))
 
+        p.add_mesh(self.mesh)
         p.add_mesh(pv.merge(spheres),  style='wireframe', color="green")
         p.add_mesh(pv.merge(spheres2), style='wireframe', color="blue")

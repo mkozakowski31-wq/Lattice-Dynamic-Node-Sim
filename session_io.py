@@ -1,27 +1,83 @@
-"""
-session_io.py
-─────────────
-Save / load a lattice session to a single .pkl file.
-
-The tricky part: slicesY / slicesX are lists of instances of
-`SlicedLenghts`, a class defined *locally* inside build_lattice().
-Local classes can't be pickled by reference, so we flatten every
-such object to a plain dict before saving.
-
-EXCEPTION: pyvista DataSet objects (PolyData, UnstructuredGrid, etc.)
-ARE natively picklable and must NOT be flattened — they are stored as-is.
-
-On load, flattened dicts are restored as types.SimpleNamespace so that
-attribute access (obj.foo) works identically to the original class.
-"""
-
 import os
 import glob
 import pickle
+import re
 import types
 
 SESSION_DIR = "sessions"
 
+def _natural_key(name: str):
+    parts = re.split(r'(\d+)', name)
+    return [int(p) if p.isdigit() else p.lower() for p in parts]
+
+def isolate_differing_characters(folder_path, isfile):
+    # 1. Select items and sort them alphabetically
+    try:
+        if isfile:
+            # Filter for files
+            items = [f for f in os.listdir(folder_path) 
+                     if os.path.isfile(os.path.join(folder_path, f))]
+            label = "File"
+        else:
+            # Filter for directories
+            items = [f for f in os.listdir(folder_path) 
+                     if os.path.isdir(os.path.join(folder_path, f))]
+            label = "Folder"
+            
+        # Natural sort: alphabetical on text segments, numeric on digit segments
+        items.sort(key=_natural_key)
+        
+    except FileNotFoundError:
+        print(f"Error: The folder '{folder_path}' was not found.")
+        return []
+
+    print(f"--- {label} Paths (Alphabetical) ---")
+    
+    item_paths = []
+    char_sets = []
+    all_chars_union = set()
+
+    for name in items:
+        path = os.path.abspath(os.path.join(folder_path, name))
+        item_paths.append(path)
+        print(path)
+
+        # 2. Identify characters to compare
+        if isfile:
+            # For files, we analyze the text INSIDE the file
+            try:
+                with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+                    content = f.read()
+            except Exception as e:
+                print(f"Could not read file {name}: {e}")
+                continue
+        else:
+            # For folders, we analyze the characters in the FOLDER NAME
+            content = name
+            
+        char_set = set(content)
+        char_sets.append(char_set)
+        all_chars_union.update(char_set)
+
+    if not char_sets:
+        print(f"No valid {label.lower()}s found to compare.")
+        return item_paths
+
+    # 3. Find characters common to ALL items (Intersection)
+    common_to_all = set.intersection(*char_sets)
+
+    # 4. Isolate characters NOT common to all (Union - Intersection)
+    differing_chars = all_chars_union - common_to_all
+    sorted_diff = sorted(list(differing_chars))
+    
+    # 5. Output the results
+    print(f"\n--- Differing Characters in {label} {'Content' if isfile else 'Names'} ---")
+    if sorted_diff:
+        print(" ".join(sorted_diff))
+    else:
+        print(f"All {label.lower()}s contain the exact same set of characters.")
+
+    return item_paths
 
 def _is_pyvista(obj) -> bool:
     """True for any object whose type lives in the pyvista package tree."""
