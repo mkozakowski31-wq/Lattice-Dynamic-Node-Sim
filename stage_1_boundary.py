@@ -546,6 +546,16 @@ def define_boundaries(p, mesh, points, faces, origin, visEdges,
     _excluded_indices = set()   # indices into all_obj_paths marked for removal
     _stage_overrides  = {}      # per-stage boundary parameter overrides
 
+    # Boundary geometry from session (bypasses Resampler when present)
+    _loaded_root_pts      = None
+    _loaded_tip_pts       = None
+    _loaded_lead_pts      = None
+    _loaded_trail_pts     = None
+    _loaded_junction_pts  = None
+    _loaded_VWcount       = None
+    _loaded_VCcount       = None
+    _loaded_size          = None
+
     (root_edges, lead_edges, tip_edges, trail_edges,
      root_pts, lead_pts, tip_pts, trail_pts,
      junction_points, leadEdge, trailEdge) = EdgeSolver(
@@ -614,6 +624,32 @@ def define_boundaries(p, mesh, points, faces, origin, visEdges,
                 boundary_dir   = sess["boundary_dir"]
                 _loaded        = True
 
+                # Restore filter state
+                _excluded_indices = set(sess.get("excluded_indices", []))
+                _stage_overrides  = {int(k): dict(v)
+                                     for k, v in sess.get("stage_overrides", {}).items()}
+                if _excluded_indices:
+                    print(f"  → {len(_excluded_indices)} excluded stage(s) restored: "
+                          f"{sorted(_excluded_indices)}")
+                if _stage_overrides:
+                    print(f"  → {len(_stage_overrides)} custom boundary override(s) restored")
+
+                # Restore pre-computed resampled boundary geometry (new sessions only)
+                if sess.get("root_pts") is not None:
+                    _loaded_root_pts     = np.asarray(sess["root_pts"])
+                    _loaded_tip_pts      = np.asarray(sess["tip_pts"])
+                    _loaded_lead_pts     = np.asarray(sess["lead_pts"])
+                    _loaded_trail_pts    = np.asarray(sess["trail_pts"])
+                    _loaded_junction_pts = np.asarray(sess["junction_points"])
+                    _loaded_VWcount      = sess["VWcount"]
+                    _loaded_VCcount      = sess["VCcount"]
+                    _loaded_size         = float(sess["size"])
+                    print(f"  → Boundary geometry restored from session  "
+                          f"(root={len(_loaded_root_pts)}, tip={len(_loaded_tip_pts)}, "
+                          f"lead={len(_loaded_lead_pts)}, trail={len(_loaded_trail_pts)})")
+                else:
+                    print("  → Old session format — Resampler will rerun on 'continue'")
+
                 print(f"  → shift={n_origin_shift}, root={n_root}, lead={n_lead}, "
                         f"tip={n_tip}, dir={boundary_dir}  (VCcount={sess['VCcount']})")
 
@@ -675,6 +711,9 @@ def define_boundaries(p, mesh, points, faces, origin, visEdges,
             # Any manual edit invalidates a previously loaded session
             _loaded = False
             _slicesY = _slicesX = _lattice_nodes = None
+            _loaded_root_pts = _loaded_tip_pts = _loaded_lead_pts = None
+            _loaded_trail_pts = _loaded_junction_pts = None
+            _loaded_VWcount = _loaded_VCcount = _loaded_size = None
             try:
                 n_origin_shift, n_root, n_lead, n_tip, boundary_dir = map(int, cmd.split())
             except ValueError:
@@ -689,10 +728,22 @@ def define_boundaries(p, mesh, points, faces, origin, visEdges,
             updateGeo(p, mesh, root_pts, lead_pts, tip_pts, trail_pts,
                       junction_points, visEdges, visEd=True, clear=True)
 
-    (root_pts, tip_pts, lead_pts, trail_pts, VWcount, VCcount) = Resampler(
-        root_pts, tip_pts, lead_pts, trail_pts,
-        root_edges, tip_edges, lead_edges, trail_edges,
-        junction_points, points, size, increase_lattice_stretch)
+    if _loaded_root_pts is not None:
+        # Resampled boundary restored from session — skip Resampler entirely
+        root_pts        = _loaded_root_pts
+        tip_pts         = _loaded_tip_pts
+        lead_pts        = _loaded_lead_pts
+        trail_pts       = _loaded_trail_pts
+        junction_points = _loaded_junction_pts
+        VWcount         = _loaded_VWcount
+        VCcount         = _loaded_VCcount
+        size            = _loaded_size
+        print(f"  [session] Boundary reuse — skipping Resampler")
+    else:
+        (root_pts, tip_pts, lead_pts, trail_pts, VWcount, VCcount) = Resampler(
+            root_pts, tip_pts, lead_pts, trail_pts,
+            root_edges, tip_edges, lead_edges, trail_edges,
+            junction_points, points, size, increase_lattice_stretch)
 
     print(f"Verify count, root vertices: {len(root_pts)}, tip vertices: {len(tip_pts)}")
     print(f"Verify count, lead vertices: {len(lead_pts)}, trail vertices: {len(trail_pts)}")
@@ -704,3 +755,4 @@ def define_boundaries(p, mesh, points, faces, origin, visEdges,
             n_origin_shift, n_root, n_lead, n_tip, boundary_dir, size,
             _loaded, _slicesY, _slicesX, _lattice_nodes,
             _excluded_indices, _stage_overrides)
+

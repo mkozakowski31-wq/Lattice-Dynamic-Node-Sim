@@ -65,8 +65,9 @@ n_lead = 501
 n_tip = 72
 size = 1
 # ---- Dev Parameters ----
-increase_lattice_stretch = 2
-based_on_extrema = False
+increase_lattice_stretch = 1
+based_on_extrema = True
+smoothing_level = 0
 
 p = BackgroundPlotter()
 
@@ -117,6 +118,9 @@ if not loaded:
         save_session(
             slicesY, slicesX, lattice_nodes,
             n_origin_shift, n_root, n_lead, n_tip, boundary_dir, VCcount,
+            root_pts, tip_pts, lead_pts, trail_pts, junction_points,
+            VWcount, size,
+            excluded_indices, stage_overrides,
             name=_name,
         )
     else:
@@ -126,7 +130,8 @@ MarchingStart = time.time()
 
 # Rebuild path lists from (potentially filtered) TotalSurfaceObjects
 obj_path_contract     = TotalSurfaceObjects[0].combined_mesh
-obj_paths_intermediate = [TotalSurfaceObjects[i].combined_mesh for i in range(1, len(TotalSurfaceObjects) - 1)]
+obj_paths_intermediate = [TotalSurfaceObjects[i].combined_mesh
+                           for i in range(1, len(TotalSurfaceObjects) - 1)]
 obj_path_extended     = TotalSurfaceObjects[-1].combined_mesh
 
 results = []
@@ -179,7 +184,7 @@ MarchingEnd = time.time()
 length = MarchingEnd - MarchingStart
 print(f"It took {str(length)} seconds to perform lattice mapping on {len(intersect_pts)+1} meshes")
 
-def _smooth_path(pts, window=5):
+def _smooth_path(pts, window=3):
     """Smooth a short list/array of 3-D points along the stage axis."""
     arr = np.asarray(pts, dtype=float)
     n   = len(arr)
@@ -197,13 +202,11 @@ for i in tqdm(range(len(intersect_ptsC)), desc= "Plotting lattice: "):
     for y in range(1, len(intersect_pts)-1, 1):
         pts.append(intersect_pts[y][i])
     pts.append(intersect_ptsE[i])
-    Npts = pts
-    pts = _smooth_path(pts, window=5)
+    if smoothing_level > 0:
+        pts = _smooth_path(pts, window=smoothing_level)
     p.add_mesh(pv.lines_from_points(pts), line_width = 2, color = "orange")
-    p.add_mesh(pv.lines_from_points(Npts), line_width = 2, color = "green")
 
 input("Press enter to visualize relative paths")
-
 p.clear()
 
 # Load the single reference mesh once — all stages reconstruct onto this
@@ -231,12 +234,14 @@ for orig_idx, stage_dict in tqdm(point_stage_map.items(), desc="Plotting relativ
         path_pts.append(reconstructed[0])
 
     path_pts = np.array(path_pts)
-    path_pts = _smooth_path(path_pts, window=3)
+    if smoothing_level > 0:
+        path_pts = _smooth_path(path_pts, window=smoothing_level)
     p.add_mesh(pv.lines_from_points(path_pts), line_width=2, color="purple")
 
 p.add_mesh(reference_mesh, color='blue', opacity=0.2)
 p.add_mesh(pv.read(TotalSurfaceObjects[0].static_mesh_sect), color='red', opacity=0.2)
 
 input("Press enter to close viewer")
+
 
 
