@@ -15,49 +15,9 @@ from stage_2_geodesics import compute_geodesics
 from stage_3_lattice import build_lattice
 from stage_4_deformation import DeformedMesh
 from stage_5_relative_plotting import reconstruct_on_surface, find_contact_points 
-root = tk.Tk()
-root.withdraw()
-
-Master_folder_selected = filedialog.askdirectory()
-print(f"Selected folder: {Master_folder_selected}")
-
-Folder_paths = isolate_differing_characters(Master_folder_selected, isfile=False)
-print(f'folders selected are: {str(Folder_paths)}')
-
-class SurfaceMeshSections:
-    def __init__(self, stage, FilePaths):
-        self.stage = stage
-        self.combined_mesh = FilePaths[0]
-        self.static_mesh_sect = FilePaths[1]
-
-        transSects = []
-        for i in range(2,len(FilePaths),1):
-            transSects.append(FilePaths[i])
-
-        self.trans_mesh_sects = transSects
-
-TotalSurfaceObjects = []
-for i in range(len(Folder_paths)):
-    filePaths = isolate_differing_characters(Folder_paths[i], isfile=True)
-    currOBJ = SurfaceMeshSections(stage=i, FilePaths=filePaths)
-    TotalSurfaceObjects.append(currOBJ)
-    print(f'Stage = {str(currOBJ.stage)}')
-    print(f"Combined Mesh = {str(currOBJ.combined_mesh)}")
-    print(f"Static Mesh = {str(currOBJ.static_mesh_sect)}")
-    print(f"Transiant Meshes = {str(currOBJ.trans_mesh_sects)}")
-
-obj_paths_intermediate = []
-
-# ---- Paths ----
-obj_path_contract = TotalSurfaceObjects[0].combined_mesh
-for paths in range(1,len(TotalSurfaceObjects)-1):
-    obj_paths_intermediate.append(TotalSurfaceObjects[paths].combined_mesh)
-obj_path_extended = TotalSurfaceObjects[-1].combined_mesh
-
-# ---- All combined mesh paths (used by the boundary filter) ----
-all_obj_paths = [obj_path_contract] + obj_paths_intermediate + [obj_path_extended]
 
 # ---- Parameters ----
+# Using a boundary size which is to large will result in an error
 boundary_dir = 1
 n_origin_shift = -102
 n_root = 103
@@ -65,9 +25,59 @@ n_lead = 501
 n_tip = 72
 size = 1
 # ---- Dev Parameters ----
-increase_lattice_stretch = 1
-based_on_extrema = True
-smoothing_level = 0
+increase_lattice_stretch = 2
+based_on_extrema = False #set to True if not using sample "Master Folder"
+master_folder_setting = True #True will look for folders which contain multiple obj files for also plotting relative paths. False will only locate and sort combined meshes with different deformation stage in Master folder
+# ---- Plotting Parameters ----
+smoothing_level = 3
+
+root = tk.Tk()
+root.withdraw()
+
+Master_folder_selected = filedialog.askdirectory()
+print(f"Selected folder: {Master_folder_selected}")
+
+class SurfaceMeshSections:
+    def __init__(self, stage, FilePaths, MultipleFiles):
+        self.stage = stage
+        self.combined_mesh = FilePaths[0]
+        if MultipleFiles:
+            self.static_mesh_sect = FilePaths[1]
+
+            transSects = []
+            for i in range(2,len(FilePaths),1):
+                transSects.append(FilePaths[i])
+
+            self.trans_mesh_sects = transSects
+
+isFile = True
+TotalSurfaceObjects = []
+
+if master_folder_setting: 
+    isFile = False
+Folder_paths = isolate_differing_characters(Master_folder_selected, isfile=isFile)
+
+for i in range(len(Folder_paths)):
+    if master_folder_setting:
+        filePaths = isolate_differing_characters(Folder_paths[i], isfile=True)
+        currOBJ = SurfaceMeshSections(stage=i, FilePaths=filePaths, MultipleFiles=True)
+    else:
+        currOBJ = SurfaceMeshSections(stage=i, FilePaths=[Folder_paths[i]], MultipleFiles=False)
+    TotalSurfaceObjects.append(currOBJ)
+    File_paths = isolate_differing_characters(Master_folder_selected, isfile=True)
+
+for i in range(len(TotalSurfaceObjects)):
+    print(f'Stage {i}: {TotalSurfaceObjects[i].stage}')
+    print(TotalSurfaceObjects[i].combined_mesh)
+
+obj_paths_intermediate = []
+
+obj_path_contract = TotalSurfaceObjects[0].combined_mesh
+for paths in range(1,len(TotalSurfaceObjects)-1):
+    obj_paths_intermediate.append(TotalSurfaceObjects[paths].combined_mesh)
+obj_path_extended = TotalSurfaceObjects[-1].combined_mesh
+
+all_obj_paths = [obj_path_contract] + obj_paths_intermediate + [obj_path_extended]
 
 p = BackgroundPlotter()
 
@@ -86,7 +96,7 @@ p = BackgroundPlotter()
     p, mesh, points, faces, origin,
     visEdges, n_origin_shift, n_root, n_lead, n_tip, boundary_dir, size, increase_lattice_stretch, based_on_extrema, all_obj_paths)
 
-# ---- Apply exclusions from the filter step ----
+# Apply exclusions from the filter step 
 if excluded_indices:
     print(f"\nRemoving {len(excluded_indices)} excluded stage(s): {sorted(excluded_indices)}")
     TotalSurfaceObjects = [obj for i, obj in enumerate(TotalSurfaceObjects)
@@ -128,11 +138,9 @@ if not loaded:
 
 MarchingStart = time.time()
 
-# Rebuild path lists from (potentially filtered) TotalSurfaceObjects
-obj_path_contract     = TotalSurfaceObjects[0].combined_mesh
-obj_paths_intermediate = [TotalSurfaceObjects[i].combined_mesh
-                           for i in range(1, len(TotalSurfaceObjects) - 1)]
-obj_path_extended     = TotalSurfaceObjects[-1].combined_mesh
+obj_path_contract = TotalSurfaceObjects[0].combined_mesh
+obj_paths_intermediate = [TotalSurfaceObjects[i].combined_mesh for i in range(1, len(TotalSurfaceObjects) - 1)]
+obj_path_extended = TotalSurfaceObjects[-1].combined_mesh
 
 results = []
 
@@ -141,10 +149,10 @@ def _stage_params(stage_i):
     ov = stage_overrides.get(stage_i, {})
     return (
         ov.get('n_origin_shift', n_origin_shift),
-        ov.get('n_root',         n_root),
-        ov.get('n_lead',         n_lead),
-        ov.get('n_tip',          n_tip),
-        ov.get('boundary_dir',   boundary_dir),
+        ov.get('n_root', n_root),
+        ov.get('n_lead', n_lead),
+        ov.get('n_tip', n_tip),
+        ov.get('boundary_dir', boundary_dir),
     )
 
 _s, _r, _le, _ti, _bd = _stage_params(0)
@@ -185,7 +193,6 @@ length = MarchingEnd - MarchingStart
 print(f"It took {str(length)} seconds to perform lattice mapping on {len(intersect_pts)+1} meshes")
 
 def _smooth_path(pts, window=3):
-    """Smooth a short list/array of 3-D points along the stage axis."""
     arr = np.asarray(pts, dtype=float)
     n   = len(arr)
     if n < 3:
@@ -206,7 +213,7 @@ for i in tqdm(range(len(intersect_ptsC)), desc= "Plotting lattice: "):
         pts = _smooth_path(pts, window=smoothing_level)
     p.add_mesh(pv.lines_from_points(pts), line_width = 2, color = "orange")
 
-input("Press enter to visualize relative paths")
+input("EXPIRAMENTAL: Press enter to visualize relative paths (Only do this with multiple meshes)")
 p.clear()
 
 # Load the single reference mesh once — all stages reconstruct onto this

@@ -163,9 +163,11 @@ class DeformedMesh:
             polyLenY = []
             for i in range(len(slicesX[idx].PolLengths)):
                 arc = slicesX[idx].PolLengths[i].compute_arc_length()
+                print(f"arc lengthX: {arc['arc_length'][-1]}")
                 polyLenX.append(arc['arc_length'][-1])
             for i in range(len(slicesY[idx].PolLengths)):
                 arc = slicesY[idx].PolLengths[i].compute_arc_length()
+                print(f"arc lengthY: {arc['arc_length'][-1]}")
                 polyLenY.append(arc['arc_length'][-1])
             return polyLenX, polyLenY
 

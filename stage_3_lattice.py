@@ -14,13 +14,13 @@ def sample_polyline(points, n=200):
     return np.vstack([np.interp(ti, t, points[:, k]) for k in range(3)]).T
 
 def curve_curve_closest_points(curveA, curveB):
-    # --- coarse search ---
+    # coarse search
     tree = cKDTree(curveB)
     dists, idx = tree.query(curveA)
     i_coarse = int(np.argmin(dists))
     j_coarse = int(idx[i_coarse])
 
-    # --- build arc-length parameterisations over a local window ---
+    # build arc-length parameterisations over a local window 
     def local_window(curve, center, half=3):
         lo = max(0, center - half)
         hi = min(len(curve) - 1, center + half)
@@ -48,7 +48,7 @@ def curve_curve_closest_points(curveA, curveB):
         alpha = (t - t_nodes[k]) / dt if dt > 0 else 0.0
         return seg[k] + alpha * (seg[k + 1] - seg[k])
 
-    # --- for each t on A, find the closest t on B, then minimise over A ---
+    # for each t on A, find the closest t on B, then minimise over A
     def dist_at_tA(t):
         pA = interp_seg(segA, tA, t)
         # inner minimisation: best t on B for this point on A
@@ -112,7 +112,7 @@ def segment_lengths(segments):
 
 def build_lattice(p, mesh, mesh_extended, geo_linesX, geo_linesY, root_pts, lead_pts, tip_pts, trail_pts,junction_points, leadEdge, trailEdge,
                   points_ex, faces_ex, n_origin_shift, n_root, n_lead, n_tip, boundary_dir, VWcount, VCcount, visEdges):
-    # ---- Build lattice nodes + straight struts ----
+    # Build lattice nodes + straight struts
     start_time_str = time.perf_counter()
     lattice_nodes = []
     polyConnectY = []
@@ -181,7 +181,7 @@ def build_lattice(p, mesh, mesh_extended, geo_linesX, geo_linesY, root_pts, lead
         PolLengths: list
 
 
-    # ---- Final visualisation — contracted mesh ----
+    #  Final visualisation — contracted mesh 
     updateGeo(p, mesh, root_pts, lead_pts, tip_pts, trail_pts,
               junction_points, visEdges, visEd=False, clear=True)
 
@@ -198,7 +198,6 @@ def build_lattice(p, mesh, mesh_extended, geo_linesX, geo_linesY, root_pts, lead
     p.add_mesh(leadEdge, color="blue", line_width=3)
     p.add_mesh(trailEdge, color="orange", line_width=3)
     p.add_mesh(polyConnectY_mesh, line_width=3, color="yellow")
-    polyConnectArr = []
     print(len(lead_pts))
     print(len(tip_pts))
     slicesX = []
