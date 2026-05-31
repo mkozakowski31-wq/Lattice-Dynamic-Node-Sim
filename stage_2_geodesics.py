@@ -55,7 +55,7 @@ def smooth_geodesic(mesh, start, end, n_points=50, iters=50):
             b = v2 - v0
             d00 = np.dot(a, a); d01 = np.dot(a, b); d11 = np.dot(b, b)
             d20 = np.dot(v, a); d21 = np.dot(v, b)
-            denom   = d00 * d11 - d01 * d01
+            denom = d00 * d11 - d01 * d01
             v_coord = (d11 * d20 - d01 * d21) / denom
             w_coord = (d00 * d21 - d01 * d20) / denom
             u_coord = 1.0 - v_coord - w_coord
@@ -77,7 +77,7 @@ def compute_geodesics(mesh, root_pts, tip_pts, lead_pts, trail_pts, VWcount, VCc
 
     start_time_geo = time.perf_counter()
 
-    # ---- X family ----
+    # X family
     geo_linesX_1 = Parallel(n_jobs=-1)(
         delayed(make_geo)(trail_pts[VWcount - 1 - x], root_pts[x - VCcount], mesh)
         for x in tqdm(range(VCcount), desc="Processing RootTrailX Geodesics")
@@ -97,7 +97,7 @@ def compute_geodesics(mesh, root_pts, tip_pts, lead_pts, trail_pts, VWcount, VCc
     span_dir /= np.linalg.norm(span_dir)
     geo_linesX = sorted(geo_linesX, key=lambda c: np.dot(c.points.mean(axis=0), span_dir))
 
-    # ---- Y family ----
+    # Y family
     geo_linesY_1 = Parallel(n_jobs=-1)(
         delayed(make_geo)(lead_pts[VCcount - y], root_pts[y - 1], mesh)
         for y in tqdm(range(VCcount, 0, -1), desc="Processing RootLeadY Geodesics")

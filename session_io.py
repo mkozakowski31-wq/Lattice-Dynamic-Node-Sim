@@ -3,7 +3,6 @@ import glob
 import pickle
 import re
 import types
-import numpy as np
 
 SESSION_DIR = "sessions"
 
@@ -11,8 +10,9 @@ def _natural_key(name: str):
     parts = re.split(r'(\d+)', name)
     return [int(p) if p.isdigit() else p.lower() for p in parts]
 
+
 def isolate_differing_characters(folder_path, isfile):
-    # 1. Select items and sort them alphabetically
+    # Select items and sort them alphabetically
     try:
         if isfile:
             # Filter for files
@@ -32,8 +32,6 @@ def isolate_differing_characters(folder_path, isfile):
         print(f"Error: The folder '{folder_path}' was not found.")
         return []
 
-    print(f"--- {label} Paths (Alphabetical) ---")
-    
     item_paths = []
     char_sets = []
     all_chars_union = set()
@@ -41,9 +39,8 @@ def isolate_differing_characters(folder_path, isfile):
     for name in items:
         path = os.path.abspath(os.path.join(folder_path, name))
         item_paths.append(path)
-        print(path)
 
-        # 2. Identify characters to compare
+        # Identify characters to compare
         if isfile:
             # For files, we analyze the text INSIDE the file
             try:
@@ -64,20 +61,13 @@ def isolate_differing_characters(folder_path, isfile):
         print(f"No valid {label.lower()}s found to compare.")
         return item_paths
 
-    # 3. Find characters common to ALL items (Intersection)
+    # Find characters common to ALL items (Intersection)
     common_to_all = set.intersection(*char_sets)
 
-    # 4. Isolate characters NOT common to all (Union - Intersection)
+    # Isolate characters NOT common to all (Union - Intersection)
     differing_chars = all_chars_union - common_to_all
     sorted_diff = sorted(list(differing_chars))
     
-    # 5. Output the results
-    print(f"\n--- Differing Characters in {label} {'Content' if isfile else 'Names'} ---")
-    if sorted_diff:
-        print(" ".join(sorted_diff))
-    else:
-        print(f"All {label.lower()}s contain the exact same set of characters.")
-
     return item_paths
 
 def _is_pyvista(obj) -> bool:
@@ -158,28 +148,24 @@ def save_session(
     path = _resolve_path(name)
 
     payload = {
-        # ── lattice ────────────────────────────────────────────────────
         "slicesY":          _to_serialisable(slicesY),
         "slicesX":          _to_serialisable(slicesX),
         "lattice_nodes":    _to_serialisable(lattice_nodes),
-        # ── global boundary params ─────────────────────────────────────
         "n_origin_shift":   int(n_origin_shift),
         "n_root":           int(n_root),
         "n_lead":           int(n_lead),
         "n_tip":            int(n_tip),
         "boundary_dir":     int(boundary_dir),
         "VCcount":          int(VCcount),
-        # ── resampled boundary geometry ────────────────────────────────
         "root_pts":         _to_serialisable(root_pts),
         "tip_pts":          _to_serialisable(tip_pts),
         "lead_pts":         _to_serialisable(lead_pts),
         "trail_pts":        _to_serialisable(trail_pts),
         "junction_points":  _to_serialisable(junction_points),
         "VWcount":          int(VWcount),
-        "size":             float(size),
-        # ── filter / stage state ───────────────────────────────────────
-        "excluded_indices": sorted(int(i) for i in excluded_indices),
-        "stage_overrides":  {int(k): dict(v) for k, v in stage_overrides.items()},
+        "size":             size,
+        "excluded_indices": list(excluded_indices) if excluded_indices else [],
+        "stage_overrides":  dict(stage_overrides) if stage_overrides else {},
     }
 
     with open(path, "wb") as fh:
@@ -194,34 +180,24 @@ def load_session(path: str) -> dict:
         raw = pickle.load(fh)
 
     payload = {
-        # ── lattice ────────────────────────────────────────────────────
         "slicesY":          _from_serialisable(raw["slicesY"]),
         "slicesX":          _from_serialisable(raw["slicesX"]),
         "lattice_nodes":    _from_serialisable(raw["lattice_nodes"]),
-        # ── global boundary params ─────────────────────────────────────
         "n_origin_shift":   raw["n_origin_shift"],
         "n_root":           raw["n_root"],
         "n_lead":           raw["n_lead"],
         "n_tip":            raw["n_tip"],
         "boundary_dir":     raw["boundary_dir"],
         "VCcount":          raw["VCcount"],
-        # ── resampled boundary geometry (None for old sessions) ────────
-        "root_pts":        (np.asarray(raw["root_pts"])
-                            if "root_pts" in raw else None),
-        "tip_pts":         (np.asarray(raw["tip_pts"])
-                            if "tip_pts" in raw else None),
-        "lead_pts":        (np.asarray(raw["lead_pts"])
-                            if "lead_pts" in raw else None),
-        "trail_pts":       (np.asarray(raw["trail_pts"])
-                            if "trail_pts" in raw else None),
-        "junction_points": (np.asarray(raw["junction_points"])
-                            if "junction_points" in raw else None),
+        "root_pts":         _from_serialisable(raw.get("root_pts")),
+        "tip_pts":          _from_serialisable(raw.get("tip_pts")),
+        "lead_pts":         _from_serialisable(raw.get("lead_pts")),
+        "trail_pts":        _from_serialisable(raw.get("trail_pts")),
+        "junction_points":  _from_serialisable(raw.get("junction_points")),
         "VWcount":          raw.get("VWcount"),
         "size":             raw.get("size"),
-        # ── filter / stage state ───────────────────────────────────────
-        "excluded_indices": set(raw.get("excluded_indices", [])),
-        "stage_overrides":  {int(k): dict(v)
-                             for k, v in raw.get("stage_overrides", {}).items()},
+        "excluded_indices": raw.get("excluded_indices", []),
+        "stage_overrides":  raw.get("stage_overrides", {}),
     }
 
     print(f"[session_io] Loaded ← {path}")
@@ -245,8 +221,7 @@ def _print_summary(payload: dict):
         f"  boundary → shift={payload['n_origin_shift']}, "
         f"root={payload['n_root']}, lead={payload['n_lead']}, "
         f"tip={payload['n_tip']}, dir={payload['boundary_dir']}, "
-        f"VCcount={payload['VCcount']},  VWcount={payload.get('VWcount')},  "
-        f"size={payload.get('size')}"
+        f"VCcount={payload['VCcount']}"
     )
     for key in ("slicesY", "slicesX", "lattice_nodes"):
         val = payload.get(key)
@@ -256,16 +231,3 @@ def _print_summary(payload: dict):
             print(f"  {key:14s} → {type(val).__name__}  len={len(val)}")
         else:
             print(f"  {key:14s} → {val}")
-    # boundary geometry
-    for key in ("root_pts", "tip_pts", "lead_pts", "trail_pts"):
-        arr = payload.get(key)
-        if arr is not None:
-            print(f"  {key:14s} → ndarray  shape={arr.shape}")
-        else:
-            print(f"  {key:14s} → None  (old session — Resampler will rerun)")
-    # filter state
-    excl = payload.get("excluded_indices", set())
-    ovrd = payload.get("stage_overrides",  {})
-    print(f"  excluded       → {sorted(excl) if excl else 'none'}")
-    print(f"  stage_overrides→ {len(ovrd)} stage(s) with custom boundaries")
-

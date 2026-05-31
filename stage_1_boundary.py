@@ -163,7 +163,7 @@ def EdgeSolver(n_origin_shift, n_root, n_lead, n_tip, boundary_dir, points, face
     tip_pts = points[np.unique(np.array(tip_edges).flatten())]
     trail_pts = points[np.unique(np.array(trail_edges).flatten())]
 
-    leadEdge  = pv.lines_from_points(lead_pts)
+    leadEdge = pv.lines_from_points(lead_pts)
     trailEdge = pv.lines_from_points(trail_pts)
 
     L_R = ordered_vertices[n_root]
@@ -181,9 +181,9 @@ def EdgeSolver(n_origin_shift, n_root, n_lead, n_tip, boundary_dir, points, face
 def Resampler(root_pts, tip_pts, lead_pts, trail_pts,
               root_edges, tip_edges, lead_edges, trail_edges,
               junction_points, points, size, increase_lattice_stretch):
-    root_len  = EdgeLength(root_edges,  points)
-    tip_len   = EdgeLength(tip_edges,   points)
-    lead_len  = EdgeLength(lead_edges,  points)
+    root_len = EdgeLength(root_edges, points)
+    tip_len = EdgeLength(tip_edges, points)
+    lead_len = EdgeLength(lead_edges, points)
     trail_len = EdgeLength(trail_edges, points)
 
     VCcount = int(np.ceil(root_len / size))
@@ -194,9 +194,9 @@ def Resampler(root_pts, tip_pts, lead_pts, trail_pts,
         VWcount = int(np.ceil(trail_len / size))
     VWcount = int(VWcount // increase_lattice_stretch)
 
-    root_pts  = resample_curve_equal(reorder_curve(root_pts,  junction_points[3], junction_points[0]), VCcount)
-    tip_pts   = resample_curve_equal(reorder_curve(tip_pts,   junction_points[1], junction_points[2]), VCcount)
-    lead_pts  = resample_curve_equal(reorder_curve(lead_pts,  junction_points[0], junction_points[1]), VWcount)
+    root_pts = resample_curve_equal(reorder_curve(root_pts, junction_points[3], junction_points[0]), VCcount)
+    tip_pts = resample_curve_equal(reorder_curve(tip_pts, junction_points[1], junction_points[2]), VCcount)
+    lead_pts = resample_curve_equal(reorder_curve(lead_pts, junction_points[0], junction_points[1]), VWcount)
     trail_pts = resample_curve_equal(reorder_curve(trail_pts, junction_points[2], junction_points[3]), VWcount)
 
     return root_pts, tip_pts, lead_pts, trail_pts, VWcount, VCcount
@@ -212,7 +212,7 @@ def filter_meshes(p, all_obj_paths, n_origin_shift, n_root, n_lead, n_tip,
     header = (f"{'Stage':<8} {'BndVerts':<{COL_W}} {'Trail':>{COL_W}} "
               f"{'Root':>{COL_W}} {'Lead':>{COL_W}} {'Tip':>{COL_W}} "
               f"{'Status':>{COL_W}} {'Excl':>{6}}")
-    rows   = []
+    rows = []
 
     print(f"\n{'='*65}")
     print(f"  Boundary filter — {len(all_obj_paths)} meshes  "
@@ -230,13 +230,13 @@ def filter_meshes(p, all_obj_paths, n_origin_shift, n_root, n_lead, n_tip,
         is_excluded  = stage_idx in excluded_indices
         excl_badge   = "  *** EXCLUDED ***" if is_excluded else ""
 
-        # ── resolve effective boundary params (per-stage override wins) ───────
+        # resolve effective boundary params (per-stage override wins) 
         ov = stage_overrides.get(stage_idx, {})
         s_shift = ov.get('n_origin_shift', n_origin_shift)
-        s_root  = ov.get('n_root',         n_root)
-        s_lead  = ov.get('n_lead',         n_lead)
-        s_tip   = ov.get('n_tip',          n_tip)
-        s_dir   = ov.get('boundary_dir',   boundary_dir)
+        s_root = ov.get('n_root', n_root)
+        s_lead = ov.get('n_lead', n_lead)
+        s_tip = ov.get('n_tip', n_tip)
+        s_dir = ov.get('boundary_dir', boundary_dir)
         has_override = bool(ov)
         override_badge = "  [CUSTOM BOUNDARY]" if has_override else ""
 
@@ -245,24 +245,22 @@ def filter_meshes(p, all_obj_paths, n_origin_shift, n_root, n_lead, n_tip,
             print(f"  Override: shift={s_shift}  root={s_root}  lead={s_lead}  "
                   f"tip={s_tip}  dir={s_dir}")
 
-        # ── load & clean mesh ────────────────────────────────────────────────
+        # load & clean mesh 
         load_ok = True
         try:
-            raw   = pv.read(obj_path).triangulate()
+            raw = pv.read(obj_path).triangulate()
             clean = raw.clean(tolerance=1e-6)
-            pts   = clean.points
-            fcs   = clean.faces.reshape(-1, 4)[:, 1:]
-            vis   = raw.extract_feature_edges(
-                        boundary_edges=True, non_manifold_edges=False,
-                        feature_edges=False, manifold_edges=False)
+            pts = clean.points
+            fcs = clean.faces.reshape(-1, 4)[:, 1:]
+            vis = raw.extract_feature_edges(boundary_edges=True, non_manifold_edges=False, feature_edges=False, manifold_edges=False)
             origin_coords = get_origin_coords(obj_path)
         except Exception as exc:
             print(f"  LOAD ERROR: {exc}")
             load_ok = False
 
-        # ── run EdgeSolver ───────────────────────────────────────────────────
-        status    = "FAIL"
-        warn_str  = ""
+        # run EdgeSolver
+        status = "FAIL"
+        warn_str = ""
         diag_cols = f"{'-':<{COL_W}} {'-':>{COL_W}} {'-':>{COL_W}} {'-':>{COL_W}} {'-':>{COL_W}}"
 
         if load_ok:
@@ -273,9 +271,7 @@ def filter_meshes(p, all_obj_paths, n_origin_shift, n_root, n_lead, n_tip,
                     s_shift, s_root, s_lead, s_tip,
                     s_dir, pts, fcs, based_on_extrema, origin_coords)
 
-                n_bnd   = len(np.unique(
-                              np.array(root_edges + lead_edges +
-                                       tip_edges  + trail_edges).flatten()))
+                n_bnd = len(np.unique(np.array(root_edges + lead_edges +tip_edges  + trail_edges).flatten()))
                 n_trail = len(trail_edges)
 
                 warnings = []
@@ -288,7 +284,7 @@ def filter_meshes(p, all_obj_paths, n_origin_shift, n_root, n_lead, n_tip,
                 if len(tip_pts) < 2:
                     warnings.append("tip<2pts")
 
-                status   = "WARN" if warnings else "OK"
+                status = "WARN" if warnings else "OK"
                 warn_str = "  [" + ", ".join(warnings) + "]" if warnings else ""
                 diag_cols = (f"{n_bnd:<{COL_W}} {n_trail:>{COL_W}} "
                              f"{len(root_edges):>{COL_W}} {len(lead_edges):>{COL_W}} "
@@ -300,19 +296,19 @@ def filter_meshes(p, all_obj_paths, n_origin_shift, n_root, n_lead, n_tip,
                 if warnings:
                     print(f"  ⚠  {', '.join(warnings)}")
 
-                # colour the excluded mesh grey so the user sees it is inactive
+                # color the excluded mesh grey so the user sees it is inactive
                 mesh_col = "grey" if is_excluded else "red"
                 mesh_opa = 0.3   if is_excluded else 0.8
                 p.clear()
                 p.add_mesh(clean, color=mesh_col, opacity=mesh_opa)
-                p.add_mesh(vis,   color="blue", line_width=1)
+                p.add_mesh(vis, color="blue", line_width=1)
                 if not is_excluded:
-                    p.add_points(root_pts,  color="red",    point_size=12, render_points_as_spheres=True)
-                    p.add_points(lead_pts,  color="blue",   point_size=12, render_points_as_spheres=True)
-                    p.add_points(tip_pts,   color="green",  point_size=12, render_points_as_spheres=True)
+                    p.add_points(root_pts, color="red", point_size=12, render_points_as_spheres=True)
+                    p.add_points(lead_pts, color="blue", point_size=12, render_points_as_spheres=True)
+                    p.add_points(tip_pts, color="green",point_size=12, render_points_as_spheres=True)
                     p.add_points(trail_pts, color="orange", point_size=12, render_points_as_spheres=True)
-                    p.add_points(junction_points[0], color="pink",  point_size=20, render_points_as_spheres=True)
-                    p.add_points(junction_points[1], color="teal",  point_size=20, render_points_as_spheres=True)
+                    p.add_points(junction_points[0], color="pink", point_size=20, render_points_as_spheres=True)
+                    p.add_points(junction_points[1], color="teal", point_size=20, render_points_as_spheres=True)
                     p.add_points(junction_points[2], color="black", point_size=20, render_points_as_spheres=True)
                     p.add_points(junction_points[3], color="white", point_size=20, render_points_as_spheres=True)
 
@@ -324,7 +320,7 @@ def filter_meshes(p, all_obj_paths, n_origin_shift, n_root, n_lead, n_tip,
         rows.append(f"{stage_label:<8} {diag_cols} {status:>{COL_W}} "
                     f"{excl_col:>{6}}{warn_str}  {short_path}")
 
-        # ── helper: redraw viewer with current effective params ───────────────
+        # helper: redraw viewer with current effective params 
         def _redraw(r_pts, le_pts, t_pts, tr_pts, jpts, clean_m, vis_m, excl):
             mesh_col = "grey" if excl else "red"
             mesh_opa = 0.3   if excl else 0.8
@@ -332,16 +328,16 @@ def filter_meshes(p, all_obj_paths, n_origin_shift, n_root, n_lead, n_tip,
             p.add_mesh(clean_m, color=mesh_col, opacity=mesh_opa)
             p.add_mesh(vis_m, color="blue", line_width=1)
             if not excl:
-                p.add_points(r_pts,   color="red",    point_size=12, render_points_as_spheres=True)
-                p.add_points(le_pts,  color="blue",   point_size=12, render_points_as_spheres=True)
-                p.add_points(t_pts,   color="green",  point_size=12, render_points_as_spheres=True)
-                p.add_points(tr_pts,  color="orange", point_size=12, render_points_as_spheres=True)
-                p.add_points(jpts[0], color="pink",   point_size=20, render_points_as_spheres=True)
-                p.add_points(jpts[1], color="teal",   point_size=20, render_points_as_spheres=True)
-                p.add_points(jpts[2], color="black",  point_size=20, render_points_as_spheres=True)
-                p.add_points(jpts[3], color="white",  point_size=20, render_points_as_spheres=True)
+                p.add_points(r_pts, color="red", point_size=12, render_points_as_spheres=True)
+                p.add_points(le_pts, color="blue", point_size=12, render_points_as_spheres=True)
+                p.add_points(t_pts, color="green", point_size=12, render_points_as_spheres=True)
+                p.add_points(tr_pts, color="orange", point_size=12, render_points_as_spheres=True)
+                p.add_points(jpts[0], color="pink", point_size=20, render_points_as_spheres=True)
+                p.add_points(jpts[1], color="teal", point_size=20, render_points_as_spheres=True)
+                p.add_points(jpts[2], color="black", point_size=20, render_points_as_spheres=True)
+                p.add_points(jpts[3], color="white", point_size=20, render_points_as_spheres=True)
 
-        # ── per-mesh prompt ──────────────────────────────────────────────────
+        # per-mesh prompt
         last = stage_idx == len(all_obj_paths) - 1
         while True:
             if last:
@@ -407,21 +403,18 @@ def filter_meshes(p, all_obj_paths, n_origin_shift, n_root, n_lead, n_tip,
 
                                 stage_overrides[stage_idx] = {
                                     'n_origin_shift': c_shift, 'n_root': c_root,
-                                    'n_lead':         c_lead,  'n_tip':  c_tip,
-                                    'boundary_dir':   c_dir,
+                                    'n_lead': c_lead, 'n_tip': c_tip,
+                                    'boundary_dir': c_dir,
                                 }
                                 # Update local working vars for the current mesh display
                                 root_edges, lead_edges, tip_edges, trail_edges = re2, le2, te2, tre2
-                                root_pts, lead_pts, tip_pts, trail_pts         = rp2, lp2, tp2, trp2
-                                junction_points                                 = jp2
+                                root_pts, lead_pts, tip_pts, trail_pts = rp2, lp2, tp2, trp2
+                                junction_points = jp2
 
                                 is_excluded = stage_idx in excluded_indices
-                                _redraw(root_pts, lead_pts, tip_pts, trail_pts,
-                                        junction_points, clean, vis, is_excluded)
+                                _redraw(root_pts, lead_pts, tip_pts, trail_pts, junction_points, clean, vis, is_excluded)
 
-                                n_bnd2   = len(np.unique(
-                                    np.array(root_edges + lead_edges +
-                                             tip_edges  + trail_edges).flatten()))
+                                n_bnd2 = len(np.unique(np.array(root_edges + lead_edges + tip_edges  + trail_edges).flatten()))
                                 n_trail2 = len(trail_edges)
                                 print(f"  ✓  Override applied — "
                                       f"bnd_verts={n_bnd2}  trail={n_trail2}  "
@@ -432,9 +425,9 @@ def filter_meshes(p, all_obj_paths, n_origin_shift, n_root, n_lead, n_tip,
                                              f"{len(root_edges):>{COL_W}} "
                                              f"{len(lead_edges):>{COL_W}} "
                                              f"{len(tip_edges):>{COL_W}}")
-                                status    = "OK"
-                                warn_str  = "  [CUSTOM]"
-                                rows[-1]  = (f"{stage_label:<8} {diag_cols} "
+                                status = "OK"
+                                warn_str = "  [CUSTOM]"
+                                rows[-1] = (f"{stage_label:<8} {diag_cols} "
                                              f"{status:>{COL_W}} "
                                              f"{excl_col:>{6}}{warn_str}  {short_path}")
                                 break
@@ -473,7 +466,7 @@ def filter_meshes(p, all_obj_paths, n_origin_shift, n_root, n_lead, n_tip,
                             _redraw(root_pts, lead_pts, tip_pts, trail_pts,
                                     junction_points, clean, vis, is_excluded)
 
-                            n_bnd_r   = len(np.unique(
+                            n_bnd_r = len(np.unique(
                                 np.array(root_edges + lead_edges +
                                          tip_edges  + trail_edges).flatten()))
                             n_trail_r = len(trail_edges)
@@ -481,7 +474,7 @@ def filter_meshes(p, all_obj_paths, n_origin_shift, n_root, n_lead, n_tip,
                                          f"{len(root_edges):>{COL_W}} "
                                          f"{len(lead_edges):>{COL_W}} "
                                          f"{len(tip_edges):>{COL_W}}")
-                            status   = "OK"
+                            status = "OK"
                             warn_str = ""
                             rows[-1] = (f"{stage_label:<8} {diag_cols} "
                                         f"{status:>{COL_W}} "
@@ -539,22 +532,22 @@ def define_boundaries(p, mesh, points, faces, origin, visEdges,
                       all_obj_paths=None):
 
     # Full-session payload — populated only when the user runs 'load'
-    _loaded         = False
-    _slicesY        = None
-    _slicesX        = None
-    _lattice_nodes  = None
+    _loaded = False
+    _slicesY = None
+    _slicesX = None
+    _lattice_nodes = None
     _excluded_indices = set()   # indices into all_obj_paths marked for removal
-    _stage_overrides  = {}      # per-stage boundary parameter overrides
+    _stage_overrides = {}      # per-stage boundary parameter overrides
 
     # Boundary geometry from session (bypasses Resampler when present)
-    _loaded_root_pts      = None
-    _loaded_tip_pts       = None
-    _loaded_lead_pts      = None
-    _loaded_trail_pts     = None
-    _loaded_junction_pts  = None
-    _loaded_VWcount       = None
-    _loaded_VCcount       = None
-    _loaded_size          = None
+    _loaded_root_pts = None
+    _loaded_tip_pts = None
+    _loaded_lead_pts = None
+    _loaded_trail_pts = None
+    _loaded_junction_pts = None
+    _loaded_VWcount = None
+    _loaded_VCcount = None
+    _loaded_size = None
 
     (root_edges, lead_edges, tip_edges, trail_edges,
      root_pts, lead_pts, tip_pts, trail_pts,
@@ -580,23 +573,19 @@ def define_boundaries(p, mesh, points, faces, origin, visEdges,
             "'load'  |  'latticesize'  |  'filter'  |  'help'\n> "
         ).strip()
 
-        # ── continue ──────────────────────────────────────────────────────
         if cmd.lower() == "continue":
             break
 
-        # ── load full session ─────────────────────────────────────────────
         elif cmd.lower() == "load":
             saved = list_sessions()
             if saved:
                 print("\nAvailable sessions:")
                 for i, f in enumerate(saved):
                     print(f"  [{i}] {f}")
-                shortcut = input(
-                    "Enter a list index to pick one, or type a full path: "
-                ).strip()
+                shortcut = input("Enter a list index to pick one, or type a full path: ").strip()
                 path = (saved[int(shortcut)]
-                        if shortcut.isdigit() and int(shortcut) < len(saved)
-                        else shortcut)
+                if shortcut.isdigit() and int(shortcut) < len(saved)
+                else shortcut)
             else:
                 print("No sessions found in sessions/ folder.")
                 path = input("Enter full path to a .pkl session file: ").strip()
@@ -612,21 +601,21 @@ def define_boundaries(p, mesh, points, faces, origin, visEdges,
                 sess = load_session(path)
 
                 # Store full lattice payload
-                _slicesY       = sess["slicesY"]
-                _slicesX       = sess["slicesX"]
+                _slicesY = sess["slicesY"]
+                _slicesX = sess["slicesX"]
                 _lattice_nodes = sess["lattice_nodes"]
 
                 # Restore boundary params so the viewer reflects the session
                 n_origin_shift = sess["n_origin_shift"]
-                n_root         = sess["n_root"]
-                n_lead         = sess["n_lead"]
-                n_tip          = sess["n_tip"]
-                boundary_dir   = sess["boundary_dir"]
-                _loaded        = True
+                n_root = sess["n_root"]
+                n_lead = sess["n_lead"]
+                n_tip = sess["n_tip"]
+                boundary_dir = sess["boundary_dir"]
+                _loaded = True
 
                 # Restore filter state
                 _excluded_indices = set(sess.get("excluded_indices", []))
-                _stage_overrides  = {int(k): dict(v)
+                _stage_overrides = {int(k): dict(v)
                                      for k, v in sess.get("stage_overrides", {}).items()}
                 if _excluded_indices:
                     print(f"  → {len(_excluded_indices)} excluded stage(s) restored: "
@@ -636,14 +625,14 @@ def define_boundaries(p, mesh, points, faces, origin, visEdges,
 
                 # Restore pre-computed resampled boundary geometry (new sessions only)
                 if sess.get("root_pts") is not None:
-                    _loaded_root_pts     = np.asarray(sess["root_pts"])
-                    _loaded_tip_pts      = np.asarray(sess["tip_pts"])
-                    _loaded_lead_pts     = np.asarray(sess["lead_pts"])
-                    _loaded_trail_pts    = np.asarray(sess["trail_pts"])
+                    _loaded_root_pts = np.asarray(sess["root_pts"])
+                    _loaded_tip_pts = np.asarray(sess["tip_pts"])
+                    _loaded_lead_pts = np.asarray(sess["lead_pts"])
+                    _loaded_trail_pts = np.asarray(sess["trail_pts"])
                     _loaded_junction_pts = np.asarray(sess["junction_points"])
-                    _loaded_VWcount      = sess["VWcount"]
-                    _loaded_VCcount      = sess["VCcount"]
-                    _loaded_size         = float(sess["size"])
+                    _loaded_VWcount = sess["VWcount"]
+                    _loaded_VCcount = sess["VCcount"]
+                    _loaded_size = float(sess["size"])
                     print(f"  → Boundary geometry restored from session  "
                           f"(root={len(_loaded_root_pts)}, tip={len(_loaded_tip_pts)}, "
                           f"lead={len(_loaded_lead_pts)}, trail={len(_loaded_trail_pts)})")
@@ -678,7 +667,6 @@ def define_boundaries(p, mesh, points, faces, origin, visEdges,
             print("                      'r' resets a stage back to the global boundary params")
             input("Press a key to return")
 
-        # ── filter ────────────────────────────────────────────────────────
         elif cmd.lower() == "filter":
             if not all_obj_paths:
                 print("No mesh paths provided to filter against. "
@@ -693,7 +681,6 @@ def define_boundaries(p, mesh, points, faces, origin, visEdges,
                 updateGeo(p, mesh, root_pts, lead_pts, tip_pts, trail_pts,
                           junction_points, visEdges, visEd=True, clear=True)
 
-        # ── latticesize ───────────────────────────────────────────────────
         elif cmd.lower() == "latticesize":
             print("WARNING: Entering a lattice size too large may result in error")
             while True:
@@ -706,7 +693,6 @@ def define_boundaries(p, mesh, points, faces, origin, visEdges,
                 except:
                     print("Not a float, try again.")
 
-        # ── manual parameter entry ────────────────────────────────────────
         else:
             # Any manual edit invalidates a previously loaded session
             _loaded = False
@@ -730,14 +716,14 @@ def define_boundaries(p, mesh, points, faces, origin, visEdges,
 
     if _loaded_root_pts is not None:
         # Resampled boundary restored from session — skip Resampler entirely
-        root_pts        = _loaded_root_pts
-        tip_pts         = _loaded_tip_pts
-        lead_pts        = _loaded_lead_pts
-        trail_pts       = _loaded_trail_pts
+        root_pts = _loaded_root_pts
+        tip_pts = _loaded_tip_pts
+        lead_pts = _loaded_lead_pts
+        trail_pts = _loaded_trail_pts
         junction_points = _loaded_junction_pts
-        VWcount         = _loaded_VWcount
-        VCcount         = _loaded_VCcount
-        size            = _loaded_size
+        VWcount = _loaded_VWcount
+        VCcount = _loaded_VCcount
+        size = _loaded_size
         print(f"  [session] Boundary reuse — skipping Resampler")
     else:
         (root_pts, tip_pts, lead_pts, trail_pts, VWcount, VCcount) = Resampler(
