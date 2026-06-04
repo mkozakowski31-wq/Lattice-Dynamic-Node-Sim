@@ -165,7 +165,7 @@ def build_lattice(p, mesh, mesh_extended, geo_linesX, geo_linesY, root_pts, lead
             indexF = (r + k)**2 + r + 3*k + (cI % 2) + (maxSeg * (c - cI)//2)
         else:
             newR = len(lead_pts) - 2 - k
-            initial_index = lattice_index(newR,c) + 2*(maxSeg-1)
+            initial_index = lattice_index(newR,c) + (maxSeg - 2)
             firstDif = 2*(len(tip_pts)-3)
             for i in range((r-newR-1)):
                 initial_index += firstDif
@@ -180,7 +180,6 @@ def build_lattice(p, mesh, mesh_extended, geo_linesX, geo_linesY, root_pts, lead
         isforward:bool
         PolLengths: list
 
-
     #  Final visualisation — contracted mesh 
     updateGeo(p, mesh, root_pts, lead_pts, tip_pts, trail_pts,
               junction_points, visEdges, visEd=False, clear=True)
@@ -191,7 +190,7 @@ def build_lattice(p, mesh, mesh_extended, geo_linesX, geo_linesY, root_pts, lead
     #     labels = [str(i) for i in range(len(segments))]
     #     p.add_point_labels(midpoints, labels, font_size=8, text_color=color,
     #                     fill_shape=False, margin=0, always_visible=True)
-
+    #
     # label_segments(p, polyConnectY, color="yellow")
     # label_segments(p, polyConnectX, color="cyan")
     p.add_points(lattice_nodes, color="cyan", point_size=6, render_points_as_spheres=True)
