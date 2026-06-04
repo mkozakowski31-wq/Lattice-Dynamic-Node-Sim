@@ -19,13 +19,13 @@ from stage_5_relative_plotting import reconstruct_on_surface, find_contact_point
 # ---- Parameters ----
 # Using a boundary size which is to large will result in an error
 boundary_dir = 1
-n_origin_shift = -102
-n_root = 103
-n_lead = 501
-n_tip = 72
+n_origin_shift = -55
+n_root = 87
+n_lead = 337
+n_tip = 87
 size = 1
-# ---- Dev Parameters ----
 increase_lattice_stretch = 2
+# ---- Dev Parameters ----
 based_on_extrema = False #set to True if not using sample "Master Folder"
 master_folder_setting = True #True will look for folders which contain multiple obj files for also plotting relative paths. False will only locate and sort combined meshes with different deformation stage in Master folder
 # ---- Plotting Parameters ----
@@ -170,12 +170,13 @@ relative_intersect_pts = []
 bary_recordsArr = []
 for i in range(len(results)):
     currentPts = results[i].Z_SegTopographicalDeformation(p, slicesY, slicesX)
-    contact_pts, bary_records, contact_indices = find_contact_points(pv.read(TotalSurfaceObjects[i].trans_mesh_sects[0]), currentPts, tolerance=0.01)
-    # print(f'In stage {str(i)}, there are {str(len(bary_records))} in contact with dynamic mesh')
+    if master_folder_setting == True:
+        contact_pts, bary_records, contact_indices = find_contact_points(pv.read(TotalSurfaceObjects[i].trans_mesh_sects[0]), currentPts, tolerance=0.01)
+        # print(f'In stage {str(i)}, there are {str(len(bary_records))} in contact with dynamic mesh')
 
-    for orig_idx, bary_rec in zip(contact_indices, bary_records):
-        relative_intersect_pts.append((i, orig_idx, bary_rec))
-    bary_recordsArr.extend(bary_records)
+        for orig_idx, bary_rec in zip(contact_indices, bary_records):
+            relative_intersect_pts.append((i, orig_idx, bary_rec))
+        bary_recordsArr.extend(bary_records)
     intersect_pts.append(currentPts)
 
 intersect_ptsC = intersect_pts[0]
@@ -186,7 +187,8 @@ p.add_points(intersect_ptsE, color = "blue", point_size=15, render_points_as_sph
 
 p.add_mesh(results[0].mesh, color ="red", opacity=0.5)
 p.add_mesh(results[-1].mesh, color ="blue", opacity=0.2)
-p.add_mesh(pv.read(TotalSurfaceObjects[0].static_mesh_sect), color ="green", opacity=0.4)
+if master_folder_setting == True:
+    p.add_mesh(pv.read(TotalSurfaceObjects[0].static_mesh_sect), color ="green", opacity=0.4)
 
 MarchingEnd = time.time()
 length = MarchingEnd - MarchingStart
@@ -213,7 +215,7 @@ for i in tqdm(range(len(intersect_ptsC)), desc= "Plotting lattice: "):
         pts = _smooth_path(pts, window=smoothing_level)
     p.add_mesh(pv.lines_from_points(pts), line_width = 2, color = "orange")
 
-input("EXPIRAMENTAL: Press enter to visualize relative paths (Only do this with multiple meshes)")
+input("EXPERIMENTAL: Press enter to visualize relative paths (Only do this with multiple meshes)")
 p.clear()
 
 # Load the single reference mesh once — all stages reconstruct onto this
