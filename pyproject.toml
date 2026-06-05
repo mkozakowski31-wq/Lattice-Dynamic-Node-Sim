@@ -1,0 +1,22 @@
+[project]
+name = "rhombic-lattice-sim"
+version = "0.1.0"
+description = "Geodesic rhombic lattice simulation for conformal skin tracking on a chordwise morphing wing"
+authors = [{ name = "Marko Kozakowski" }]
+readme = "README.md"
+requires-python = ">=3.9"
+
+dependencies = [
+    "numpy",
+    "scipy",
+    "pyvista",
+    "pyvistaqt",
+    "vtk",
+    "potpourri3d",
+    "joblib",
+    "tqdm",
+    "PyQt5",          # Qt backend for the pyvistaqt viewer
+]
+
+[tool.uv]
+package = false
