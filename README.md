@@ -6,7 +6,7 @@
 ![python](https://img.shields.io/badge/python-3.13%2B-blue)
 ![license](https://img.shields.io/badge/license-Apache%202.0-blue.svg)
 
-> Companion code for the paper *Rhombic Lattice Simulation for Conformal Skin Tracking on a Chordwise Morphing Wing* (M. Kozakowski, 2026). See [Citing this work](https://github.com/user-attachments/files/28617135/Lattice_Sim_For_Dynamic_Nodes_finalV2.pdf).
+> Companion code for the paper *Rhombic Lattice Simulation for Conformal Skin Tracking on a Chordwise Morphing Wing* (M. Kozakowski, 2026). See [Citing this work](https://github.com/user-attachments/files/28650327/rLatticeSimForDynamicNodes.pdf).
 
 <img width="1920" height="1109" alt="ezgif com-crop" src="https://github.com/user-attachments/assets/c8552f6f-dbc9-4c23-bd22-5833b3a545fd" />
 <!-- TODO: drop a render or GIF of the lattice deforming across stages here -->
@@ -253,4 +253,4 @@ uv run python Main.py
 ## More Documentation / Article
 
 Additional information regarding the program’s design methodology, implementation, and usage can be found in the accompanying paper:
-[Mesh Morphing and Dynamic Lattice Simulation](https://github.com/user-attachments/files/28617135/Lattice_Sim_For_Dynamic_Nodes_finalV2.pdf)
+[Mesh Morphing and Dynamic Lattice Simulation](https://github.com/user-attachments/files/28650327/rLatticeSimForDynamicNodes.pdf)
