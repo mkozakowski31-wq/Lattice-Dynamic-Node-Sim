@@ -4,7 +4,7 @@
 
 ![status](https://img.shields.io/badge/status-research%20prototype-orange)
 ![python](https://img.shields.io/badge/python-3.9%2B-blue)
-![license](https://img.shields.io/badge/license-TBD-lightgrey)
+![license](https://img.shields.io/badge/license-Apache%202.0-blue.svg)
 
 > Companion code for the paper *Rhombic Lattice Simulation for Conformal Skin Tracking on a Chordwise Morphing Wing* (M. Kozakowski, 2026). See [Citing this work](https://github.com/user-attachments/files/28617135/Lattice_Sim_For_Dynamic_Nodes_finalV2.pdf).
 
