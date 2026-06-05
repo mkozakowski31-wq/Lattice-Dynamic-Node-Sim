@@ -3,13 +3,13 @@
 **A geodesic lattice simulation that tracks how a rhombic lattice deforms across the concave lower surface of a chordwise morphing wing.**
 
 ![status](https://img.shields.io/badge/status-research%20prototype-orange)
-![python](https://img.shields.io/badge/python-3.13%2B-blue)
+![python](https://img.shields.io/badge/python-3.13-blue)
 ![license](https://img.shields.io/badge/license-Apache%202.0-blue.svg)
 
-> Companion code for the paper *Rhombic Lattice Simulation for Conformal Skin Tracking on a Chordwise Morphing Wing* (M. Kozakowski, 2026). See [Citing this work](https://github.com/user-attachments/files/28617135/Lattice_Sim_For_Dynamic_Nodes_finalV2.pdf).
+> Companion code for the paper *Rhombic Lattice Simulation for Conformal Skin Tracking on a Chordwise Morphing Wing* (M. Kozakowski, 2026). [See
+the paper (PDF)](https://github.com/user-attachments/files/28651044/rLatticeSimForDynamicNodes.pdf).
 
 <img width="1920" height="1109" alt="ezgif com-crop" src="https://github.com/user-attachments/assets/c8552f6f-dbc9-4c23-bd22-5833b3a545fd" />
-<!-- TODO: drop a render or GIF of the lattice deforming across stages here -->
 
 ## Overview
 
@@ -29,9 +29,9 @@ Two pieces of the method were developed for this project:
 - Surface-conforming reference lattice from a single combined surface mesh.
 - Exact geodesic ribs via the edge-flip method (`potpourri3d`), avoiding the faceting of edge-constrained shortest paths.
 - Closest-approach node extraction refined to sub-sample precision.
-- Marching trilateration across an arbitrary number of deformed mesh stages, parallelised with `joblib`.
+- Marching trilateration across an arbitrary number of deformed mesh stages, parallelized with `joblib`.
 - Interactive CLI for boundary definition, per-stage overrides, stage exclusion, and lattice sizing.
-- Session save/load — skip recomputation and resume directly at the deformation step.
+- Session save/load: skips recomputation of lattice and resumes directly at the deformation step.
 - 3-D visualisation throughout (PyVista).
 - Optional, experimental relative-path tracking on the dynamic surface region.
 
@@ -253,4 +253,6 @@ uv run python Main.py
 ## More Documentation / Article
 
 Additional information regarding the program’s design methodology, implementation, and usage can be found in the accompanying paper:
-[Mesh Morphing and Dynamic Lattice Simulation](https://github.com/user-attachments/files/28617135/Lattice_Sim_For_Dynamic_Nodes_finalV2.pdf)
+[Rhombic Lattice Simulation for Conformal
+Skin Tracking on a Chordwise Morphing
+Wing](https://github.com/user-attachments/files/28651044/rLatticeSimForDynamicNodes.pdf)
