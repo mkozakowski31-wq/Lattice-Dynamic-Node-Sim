@@ -131,7 +131,7 @@ python Main.py
 ```
 
 1. A folder selection dialog opens, allowing you to choose your `MasterFolder`.
-2. The 3-D viewer and the boundary CLI launch. Adjust the boundary parameters until the four edges are coloured correctly (root = red, lead = blue, tip = green, trail = orange).
+2. The 3-D viewer and the boundary CLI launch. Adjust the boundary parameters until the four edges are colored correctly (root = red, lead = blue, tip = green, trail = orange).
 3. Type `continue` to build the reference lattice, then optionally save the session.
 4. The lattice is propagated across all stages and the global node paths are drawn.
 
@@ -144,7 +144,7 @@ python Main.py
 | `load` | Restore a saved session; typing `continue` straight after skips the lattice rebuild. |
 | `filter` | Step through every stage mesh to validate/override its boundary or exclude it (`Enter` = next, `b` = edit this stage, `r` = reset, `m` = mark/exclude, `q` = quit). |
 | `continue` | Commit the configuration and run the lattice plotter. |
-| `help` | Show the colour legend and command reference. |
+| `help` | Show the color legend and command reference. |
 
 ## Configuration
 
