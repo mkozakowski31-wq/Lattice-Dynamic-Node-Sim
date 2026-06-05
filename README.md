@@ -21,8 +21,8 @@ This repository simulates the central question that design raises: **how do the 
 
 Two pieces of the method were developed for this project:
 
-1. **Geodesic lattice construction** — exact polyhedral geodesics (FlipOut) between arc-length-resampled boundary points, with nodes located at the geodesics' closest approach in 3-D.
-2. **Marching trilateration** — a row-by-row propagation that re-expresses the lattice on each deformed mesh using only the reference strut lengths and the deformed surface geometry; no deformation field and no global solve.
+1. **Geodesic lattice construction**: exact polyhedral geodesics (FlipOut) between arc-length-resampled boundary points, with nodes located at the geodesics' closest approach in 3-D.
+2. **Marching trilateration**: a row-by-row propagation that re-expresses the lattice on each deformed mesh using only the reference strut lengths and the deformed surface geometry; no deformation field and no global solve.
 
 ## Features
 
