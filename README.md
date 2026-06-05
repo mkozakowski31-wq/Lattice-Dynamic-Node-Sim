@@ -3,7 +3,7 @@
 **A geodesic lattice simulation that tracks how a rhombic lattice deforms across the concave lower surface of a chordwise morphing wing.**
 
 ![status](https://img.shields.io/badge/status-research%20prototype-orange)
-![python](https://img.shields.io/badge/python-3.9%2B-blue)
+![python](https://img.shields.io/badge/python-3.13%2B-blue)
 ![license](https://img.shields.io/badge/license-Apache%202.0-blue.svg)
 
 > Companion code for the paper *Rhombic Lattice Simulation for Conformal Skin Tracking on a Chordwise Morphing Wing* (M. Kozakowski, 2026). See [Citing this work](https://github.com/user-attachments/files/28617135/Lattice_Sim_For_Dynamic_Nodes_finalV2.pdf).
@@ -21,8 +21,8 @@ This repository simulates the central question that design raises: **how do the 
 
 Two pieces of the method were developed for this project:
 
-1. **Geodesic lattice construction** — exact polyhedral geodesics (FlipOut) between arc-length-resampled boundary points, with nodes located at the geodesics' closest approach in 3-D.
-2. **Marching trilateration** — a row-by-row propagation that re-expresses the lattice on each deformed mesh using only the reference strut lengths and the deformed surface geometry; no deformation field and no global solve.
+1. **Geodesic lattice construction**: exact polyhedral geodesics (FlipOut) between arc-length-resampled boundary points, with nodes located at the geodesics' closest approach in 3-D.
+2. **Marching trilateration**: a row-by-row propagation that re-expresses the lattice on each deformed mesh using only the reference strut lengths and the deformed surface geometry; no deformation field and no global solve.
 
 ## Features
 
@@ -73,7 +73,23 @@ Each deformed stage is seeded from its resampled tip-edge nodes and marched span
 
 ## Requirements
 
-i will figure out later
+- **Python 3.13** (pinned via `.python-version`). The project is not run on 3.14 yet: one dependency, `potpourri3d`, does not currently ship a prebuilt wheel for it.
+- **[uv](https://docs.astral.sh/uv/)** for dependency management.
+- A **3-D display**, the program opens an interactive PyVista viewer and a file dialog, so it needs a graphical session rather than a headless one.
+
+### Install and run
+
+```bash
+uv python pin 3.13     # if not already pinned
+uv sync                # fetches Python 3.13, resolves dependencies, builds the .venv
+uv run python Main.py
+```
+
+`uv sync` installs everything from the committed `uv.lock`, so the environment is reproducible across machines, and `uv run` executes inside that environment without manual activation.
+
+### Notes
+
+- `PyQt5` is the Qt backend the `pyvistaqt` viewer needs; `pyvista` does not pull it in automatically.
 
 ## Input data
 
@@ -115,7 +131,7 @@ python Main.py
 ```
 
 1. A folder selection dialog opens, allowing you to choose your `MasterFolder`.
-2. The 3-D viewer and the boundary CLI launch. Adjust the boundary parameters until the four edges are coloured correctly (root = red, lead = blue, tip = green, trail = orange).
+2. The 3-D viewer and the boundary CLI launch. Adjust the boundary parameters until the four edges are colored correctly (root = red, lead = blue, tip = green, trail = orange).
 3. Type `continue` to build the reference lattice, then optionally save the session.
 4. The lattice is propagated across all stages and the global node paths are drawn.
 
@@ -128,7 +144,7 @@ python Main.py
 | `load` | Restore a saved session; typing `continue` straight after skips the lattice rebuild. |
 | `filter` | Step through every stage mesh to validate/override its boundary or exclude it (`Enter` = next, `b` = edit this stage, `r` = reset, `m` = mark/exclude, `q` = quit). |
 | `continue` | Commit the configuration and run the lattice plotter. |
-| `help` | Show the colour legend and command reference. |
+| `help` | Show the color legend and command reference. |
 
 ## Configuration
 
@@ -162,6 +178,77 @@ This is a research prototype. Known constraints (discussed in the paper):
 - **No lattice-size validation.** An incompatible `size` errors at the plotting stage rather than on entry.
 - **Endpoint contraction from smoothing.** The moving-average filter is not pinned to the path endpoints, so a high `smoothing_level` pulls them inward.
 - **`based_on_extrema = False`** requires the `origin` vertex marking and will fail on meshes prepared without it.
+
+## Tutorial
+
+The repository includes sample data so you can run the full pipeline without preparing your own meshes. Each example is selected by setting two parameters at the top of `Main.py`, then running the program. The default boundary parameters in `Main.py` (`-55 87 337 87 1`) are already calibrated for the included meshes, after filtering out or adjusting boundaries for any stage with large boundary diffrence, you can simply type `continue` at the boundary prompt.
+
+### 1. Combined + static + dynamic meshes (`MasterFolder`)
+
+Runs the full pipeline including the experimental relative-path tracking, which needs the separate static and dynamic surface meshes.
+
+In `Main.py`:
+
+```python
+based_on_extrema = False   # origin is read from the `origin` marker in the OBJ
+master_folder_setting = True    # expects Stage_*/ folders, each with Mesh_A/B/C
+```
+
+Then:
+
+```bash
+uv run python Main.py
+```
+
+1. In the folder dialog, select the included **`MasterFolder`** directory.
+2. The viewer shows the mesh with its colored boundary edges (root = red, lead = blue, tip = green, trail = orange). The defaults match most of the data, so after you `filter` out any meshes with inconsistent boundaries, type `continue`.
+3. (Optional) Save the session when prompted.
+4. The global node paths are drawn over the contracted (teal) and extended (blue) meshes.
+5. Press **Enter** at the `EXPERIMENTAL` prompt to also reconstruct the relative node paths on the dynamic surface (purple).
+
+### 2. Combined meshes only (`MasterFolderWithOnlyCombined`)
+
+The simpler, recommended mode: one combined mesh per stage, global paths only, no relative-path step.
+
+In `Main.py`:
+
+```python
+based_on_extrema = False
+master_folder_setting = False   # expects Stage_1.obj, Stage_2.obj, … in one folder
+```
+
+Then:
+
+```bash
+uv run python Main.py
+```
+
+1. Select the included **`MasterFolderWithOnlyCombined`** directory.
+2. Type `filter`, look through the stages, and if the boundaries are inconsistent, type `m` to remove them from the pipeline or `b` to adjust the local boundary for that specific mesh.
+3. Type `continue` at the boundary prompt.
+4. (Optional) Save the session when prompted.
+5. The global node paths are drawn across the stages. There is no relative-path step in this mode, since the dynamic surface is not provided.
+
+### 3. Loading a saved session (`Tutorial.pkl`)
+
+`Tutorial.pkl` is a session saved from the `MasterFolder` run. Loading it restores the reference lattice and **skips the geodesic and lattice computation**, jumping straight to deformation tracking (much faster than rebuilding from scratch). The meshes are still required: the marching stage runs on the actual stage geometry, and the session only restores the reference lattice.
+
+In `Main.py` (match the dataset the session was built from):
+
+```python
+based_on_extrema = False
+master_folder_setting = True
+```
+
+Then:
+
+```bash
+uv run python Main.py
+```
+
+1. Select the included **`MasterFolder`** directory, the meshes are needed for the deformation stage.
+2. At the boundary prompt type `load`, choose **`Tutorial.pkl`** from the list (sessions are read from the `sessions/` folder; a full path is also accepted), then type `continue`.
+3. Because a full session is loaded, the reference lattice is reused and the pipeline proceeds directly to marching the lattice across the stages, producing the same paths as Example 1.
 
 ## More Documentation / Article
 
